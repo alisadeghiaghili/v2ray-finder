@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements.txt
+recursive-include src/v2ray_finder/gui *.ui *.qrc
+recursive-include tests *.py
+global-exclude __pycache__
+global-exclude *.py[co]

@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "v2ray-finder"
+version = "0.1.0"
+description = "Search and collect V2Ray servers from GitHub repositories"
+readme = "README.md"
+authors = [
+    {name = "Ali Sadeghi Aghili", email = "alisadeghiaghili@gmail.com"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Internet",
+    "Topic :: Utilities",
+]
+keywords = ["v2ray", "proxy", "vpn", "github", "vmess", "vless", "trojan", "shadowsocks", "subscription"]
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.4.0"]
+"cli-rich" = ["rich>=13.7.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+    "isort>=5.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/alisadeghiaghili/v2ray-finder"
+Repository = "https://github.com/alisadeghiaghili/v2ray-finder"
+Issues = "https://github.com/alisadeghiaghili/v2ray-finder/issues"
+"Source Code" = "https://github.com/alisadeghiaghili/v2ray-finder"
+
+[project.scripts]
+v2ray-finder = "v2ray_finder.cli:main"
+"v2ray-finder-rich" = "v2ray_finder.cli_rich:main"
+"v2ray-finder-gui" = "v2ray_finder.gui.main_window:launch"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.black]
+line-length = 88
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
