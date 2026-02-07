@@ -10,7 +10,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![GitHub stars](https://img.shields.io/github/stars/alisadeghiaghili/v2ray-finder.svg?style=social)](https://github.com/alisadeghiaghili/v2ray-finder/stargazers)
 
-A small opinionated tool to **fetch, aggregate and inspect public V2Ray server configs** from GitHub and a set of curated subscription sources.  
+A tool to **fetch, aggregate, validate and health-check public V2Ray server configs** from GitHub and curated subscription sources.  
 
 هدف این ابزار این است که بدون دردسر، یک لیست تمیز و dedup شده از لینک‌های `vmess://`, `vless://`, `trojan://`, `ss://`, `ssr://` بهت بده تا هرطور خواستی مصرفش کنی؛ از وارد کردن در کلاینت تا اسکریپت‌نویسی و اتوماسیون.
 
@@ -27,6 +27,9 @@ A small opinionated tool to **fetch, aggregate and inspect public V2Ray server c
 - 🌐 **Supports**: vmess, vless, trojan, shadowsocks, ssr
 - 💾 **Export** to text files
 - 📊 **Statistics** by protocol
+- ✅ **Health checking**: TCP connectivity, latency measurement, config validation
+- 🎯 **Quality scoring**: Rank servers by speed and reliability
+- ⚡ **Concurrent checks**: Fast async health validation
 - ✅ **CI/CD**: Automated testing and deployment
 
 ---
@@ -79,7 +82,9 @@ pip install -e ".[gui,cli-rich,dev]"
 
 ## 📚 Library usage (Python API) / استفاده به‌صورت کتابخانه پایتونی
 
-#### English / انگلیسی
+### Basic usage / استفاده ساده
+
+#### English
 
 ```python
 from v2ray_finder import V2RayServerFinder
@@ -108,9 +113,7 @@ count, filename = finder.save_to_file(
 print(f"Saved {count} servers to {filename}")
 ```
 
-<br>
-
-#### Persian / فارسی
+#### فارسی
 
 ```python
 from v2ray_finder import V2RayServerFinder
@@ -134,7 +137,115 @@ count, filename = finder.save_to_file("v2ray_servers.txt", limit=200)
 print(f"{count} سرور در {filename} ذخیره شد")
 ```
 
-خروجی‌ها فقط لینک خالص سرور هستند
+---
+
+### 🏥 Health Checking / بررسی سلامت سرورها
+
+**NEW!** Now you can validate configs and check server connectivity before using them.
+
+#### English
+
+```python
+from v2ray_finder import V2RayServerFinder
+
+finder = V2RayServerFinder()
+
+# Get servers with health checks
+servers = finder.get_servers_with_health(
+    use_github_search=False,      # Use curated sources only
+    check_health=True,            # Enable health checking
+    health_timeout=5.0,           # 5 second timeout per server
+    concurrent_checks=50,         # Check 50 servers at once
+    min_quality_score=60.0,       # Only servers with quality >= 60
+    filter_unhealthy=True,        # Exclude unreachable servers
+)
+
+# Print results sorted by quality (best first)
+for server in servers[:10]:  # Top 10
+    print(f"{server['protocol']:8s} | "
+          f"Quality: {server['quality_score']:5.1f} | "
+          f"Latency: {server['latency_ms']:6.1f}ms | "
+          f"Status: {server['status']}")
+    print(f"  {server['config'][:80]}...")
+
+# Save only healthy servers
+count, filename = finder.save_to_file(
+    filename="healthy_servers.txt",
+    check_health=True,
+    filter_unhealthy=True,
+    min_quality_score=70.0,
+)
+print(f"Saved {count} healthy servers")
+```
+
+#### فارسی
+
+```python
+from v2ray_finder import V2RayServerFinder
+
+finder = V2RayServerFinder()
+
+# دریافت سرورها با بررسی سلامت
+servers = finder.get_servers_with_health(
+    use_github_search=False,      # فقط منابع معتبر
+    check_health=True,            # فعال‌سازی health check
+    health_timeout=5.0,           # تایم‌اوت ۵ ثانیه
+    concurrent_checks=50,         # بررسی همزمان ۵۰ تا
+    min_quality_score=60.0,       # فقط سرورهای با کیفیت >= ۶۰
+    filter_unhealthy=True,        # حذف سرورهای غیرقابل دسترس
+)
+
+# نمایش نتایج مرتب‌شده بر اساس کیفیت
+for server in servers[:10]:  # ۱۰ تای اول
+    print(f"{server['protocol']:8s} | "
+          f"کیفیت: {server['quality_score']:5.1f} | "
+          f"تاخیر: {server['latency_ms']:6.1f}ms | "
+          f"وضعیت: {server['status']}")
+    print(f"  {server['config'][:80]}...")
+
+# ذخیره فقط سرورهای سالم
+count, filename = finder.save_to_file(
+    filename="healthy_servers.txt",
+    check_health=True,
+    filter_unhealthy=True,
+    min_quality_score=70.0,
+)
+print(f"{count} سرور سالم ذخیره شد")
+```
+
+#### Advanced: Direct health checker usage
+
+```python
+from v2ray_finder import HealthChecker, ServerValidator
+
+# Validate a single config
+validator = ServerValidator()
+is_valid, error, host, port = validator.validate_config(
+    "vmess://eyJhZGQiOiIxMjcuMC4wLjEiLCJwb3J0IjoiNDQzIn0="
+)
+print(f"Valid: {is_valid}, Host: {host}, Port: {port}")
+
+# Check multiple servers
+checker = HealthChecker(timeout=5.0, concurrent_limit=100)
+servers_to_check = [
+    ("vmess://...", "vmess"),
+    ("vless://...", "vless"),
+]
+
+results = checker.check_servers(servers_to_check)
+for result in results:
+    if result.is_healthy:
+        print(f"✓ {result.protocol}: {result.latency_ms:.1f}ms (score: {result.quality_score:.0f})")
+    else:
+        print(f"✗ {result.protocol}: {result.status.value} - {result.error}")
+```
+
+**Quality Score:**
+- `100`: Perfect (latency < 100ms)
+- `80-60`: Good (latency 100-300ms)
+- `<60`: Degraded (latency > 300ms)
+- `10`: Unreachable
+- `0`: Invalid config
 
 ---
 
@@ -242,7 +353,7 @@ Contributions are very welcome. If you use this tool, break it, or have ideas to
 
  - باگ پیدا کردی؟ Issue باز کن.
  - چیزی رو بهتر کردی؟ PR بفرست.
- - ایده داری (health-check، فیلتر، export فرمت‌های مختلف)؟ توی Discussion بنویس.
+ - ایده داری؟ توی Discussion بنویس.
 
 این پروژه با عشق برای آزادی ساخته شده؛ هر مشارکت کوچیکی (حتی report یک باگ ساده) کمک می‌کنه ابزار برای بقیه هم مفیدتر و قابل اعتمادتر بشه.
 
