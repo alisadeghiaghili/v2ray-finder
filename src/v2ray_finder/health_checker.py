@@ -316,15 +316,12 @@ class HealthChecker:
         """
         semaphore = asyncio.Semaphore(self.concurrent_limit)
 
-        async def check_with_semaphore(
-            config: str, protocol: str
-        ) -> ServerHealth:
+        async def check_with_semaphore(config: str, protocol: str) -> ServerHealth:
             async with semaphore:
                 return await self.check_server_health(config, protocol)
 
         tasks = [
-            check_with_semaphore(config, protocol)
-            for config, protocol in servers
+            check_with_semaphore(config, protocol) for config, protocol in servers
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -338,9 +335,7 @@ class HealthChecker:
 
         return health_results
 
-    def check_servers(
-        self, servers: List[Tuple[str, str]]
-    ) -> List[ServerHealth]:
+    def check_servers(self, servers: List[Tuple[str, str]]) -> List[ServerHealth]:
         """Synchronous wrapper for batch health checks.
 
         Args:
@@ -408,6 +403,4 @@ def sort_by_quality(
     Returns:
         Sorted list
     """
-    return sorted(
-        health_results, key=lambda x: x.quality_score, reverse=descending
-    )
+    return sorted(health_results, key=lambda x: x.quality_score, reverse=descending)
