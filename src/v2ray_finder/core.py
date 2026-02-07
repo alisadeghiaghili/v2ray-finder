@@ -260,11 +260,106 @@ class V2RayServerFinder:
 
         return server_list
 
+    def get_servers_with_health(
+        self,
+        use_github_search: bool = False,
+        check_health: bool = True,
+        health_timeout: float = 5.0,
+        concurrent_checks: int = 50,
+        min_quality_score: float = 0.0,
+        filter_unhealthy: bool = False,
+    ) -> List[Dict]:
+        """
+        Get servers with optional health checking.
+
+        Args:
+            use_github_search: Whether to include GitHub search
+            check_health: Whether to perform health checks
+            health_timeout: Timeout for health checks in seconds
+            concurrent_checks: Max concurrent health checks
+            min_quality_score: Minimum quality score (0-100) to include
+            filter_unhealthy: Whether to exclude unhealthy servers
+
+        Returns:
+            List of server dictionaries with health information
+        """
+        servers = self.get_all_servers(use_github_search=use_github_search)
+        
+        if not check_health:
+            # Return without health info
+            return [
+                {
+                    "config": server,
+                    "protocol": server.split("://")[0] if "://" in server else "unknown",
+                    "health_checked": False,
+                }
+                for server in servers
+            ]
+        
+        # Import health checker only when needed
+        try:
+            from .health_checker import HealthChecker, filter_healthy_servers, sort_by_quality
+        except ImportError:
+            logger.warning("Health checker not available, returning servers without health info")
+            return [
+                {
+                    "config": server,
+                    "protocol": server.split("://")[0] if "://" in server else "unknown",
+                    "health_checked": False,
+                }
+                for server in servers
+            ]
+        
+        # Prepare server list for health checking
+        server_tuples = [
+            (server, server.split("://")[0] if "://" in server else "unknown")
+            for server in servers
+        ]
+        
+        # Perform health checks
+        logger.info(f"Checking health of {len(server_tuples)} servers...")
+        checker = HealthChecker(timeout=health_timeout, concurrent_limit=concurrent_checks)
+        health_results = checker.check_servers(server_tuples)
+        
+        # Filter if requested
+        if filter_unhealthy or min_quality_score > 0:
+            health_results = filter_healthy_servers(
+                health_results,
+                min_quality_score=min_quality_score,
+                exclude_unreachable=filter_unhealthy
+            )
+        
+        # Sort by quality
+        health_results = sort_by_quality(health_results, descending=True)
+        
+        # Convert to dict format
+        result_list = []
+        for health in health_results:
+            result_list.append(
+                {
+                    "config": health.config,
+                    "protocol": health.protocol,
+                    "health_checked": True,
+                    "status": health.status.value,
+                    "latency_ms": health.latency_ms,
+                    "quality_score": health.quality_score,
+                    "host": health.host,
+                    "port": health.port,
+                    "error": health.error,
+                    "validation_error": health.validation_error,
+                }
+            )
+        
+        return result_list
+
     def save_to_file(
         self,
         filename: str = "v2ray_servers.txt",
         limit: Optional[int] = None,
         use_github_search: bool = False,
+        check_health: bool = False,
+        filter_unhealthy: bool = False,
+        min_quality_score: float = 0.0,
     ) -> Tuple[int, str]:
         """
         Save servers to a text file.
@@ -273,11 +368,23 @@ class V2RayServerFinder:
             filename: Output filename
             limit: Optional limit on number of servers
             use_github_search: Whether to include GitHub search
+            check_health: Whether to perform health checks before saving
+            filter_unhealthy: Whether to exclude unhealthy servers
+            min_quality_score: Minimum quality score to include
 
         Returns:
             Tuple of (number of servers saved, filename)
         """
-        servers = self.get_all_servers(use_github_search=use_github_search)
+        if check_health:
+            servers_data = self.get_servers_with_health(
+                use_github_search=use_github_search,
+                check_health=True,
+                filter_unhealthy=filter_unhealthy,
+                min_quality_score=min_quality_score,
+            )
+            servers = [s["config"] for s in servers_data]
+        else:
+            servers = self.get_all_servers(use_github_search=use_github_search)
 
         if limit:
             servers = servers[:limit]
