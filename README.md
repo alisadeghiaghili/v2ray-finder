@@ -32,6 +32,7 @@ A tool to **fetch, aggregate, validate and health-check public V2Ray server conf
 - ⚡ **Concurrent checks**: Fast async health validation
 - 🛡️ **Robust error handling**: Detailed exception hierarchy with proper error propagation
 - 📈 **Rate limit tracking**: Monitor GitHub API usage
+- 🔒 **Secure token handling**: Environment variable support with validation
 - ✅ **CI/CD**: Automated testing and deployment
 
 ---
@@ -82,6 +83,132 @@ pip install -e ".[gui,cli-rich,dev]"
 
 ---
 
+## 🔒 Token Security / امنیت Token
+
+**IMPORTANT:** Proper token handling is critical for security.
+
+### ⚠️ Security Risks / مخاطرات امنیتی
+
+**NEVER** pass tokens directly in code or CLI arguments. Tokens can be exposed through:
+
+- 👀 **Process listings** (`ps`, `top`, Task Manager)
+- 📝 **Shell history** (`.bash_history`, `.zsh_history`)
+- 📊 **Application logs**
+- 🐛 **Exception tracebacks**
+- 📡 **CI/CD logs**
+
+هیچ‌وقت token رو مستقیم توی کد یا CLI نفرست. Token می‌تونه از این مسیرها لو بره:
+
+### ✅ Recommended: Environment Variables / توصیه شده
+
+#### English
+
+```bash
+# Set token in environment (recommended)
+export GITHUB_TOKEN="ghp_your_token_here"
+
+# Python usage
+from v2ray_finder import V2RayServerFinder
+
+# Automatically reads from GITHUB_TOKEN env var
+finder = V2RayServerFinder()
+
+# Or explicitly use from_env() factory method
+finder = V2RayServerFinder.from_env()
+```
+
+```bash
+# CLI usage
+export GITHUB_TOKEN="ghp_your_token_here"
+v2ray-finder -s -o servers.txt  # Automatically uses env var
+```
+
+**Making it permanent:**
+
+```bash
+# Linux/macOS - Add to ~/.bashrc or ~/.zshrc
+echo 'export GITHUB_TOKEN="ghp_your_token_here"' >> ~/.bashrc
+source ~/.bashrc
+
+# Or use a .env file with python-dotenv
+pip install python-dotenv
+# Create .env file with: GITHUB_TOKEN=ghp_your_token_here
+```
+
+#### فارسی
+
+```bash
+# تنظیم token توی environment variable (پیشنهادی)
+export GITHUB_TOKEN="ghp_your_token_here"
+
+# استفاده توی Python
+from v2ray_finder import V2RayServerFinder
+
+# به طور خودکار از GITHUB_TOKEN می‌خونه
+finder = V2RayServerFinder()
+
+# یا به طور صریح
+finder = V2RayServerFinder.from_env()
+```
+
+```bash
+# استفاده توی CLI
+export GITHUB_TOKEN="ghp_your_token_here"
+v2ray-finder -s -o servers.txt  # خودکار از env var استفاده می‌کنه
+```
+
+**دائمی کردن:**
+
+```bash
+# Linux/macOS - اضافه به ~/.bashrc یا ~/.zshrc
+echo 'export GITHUB_TOKEN="ghp_your_token_here"' >> ~/.bashrc
+source ~/.bashrc
+
+# یا استفاده از فایل .env
+pip install python-dotenv
+# فایل .env بساز با: GITHUB_TOKEN=ghp_your_token_here
+```
+
+### ❌ Insecure Methods / روش‌های ناامن
+
+```python
+# ❌ INSECURE - Token in code
+finder = V2RayServerFinder(token="ghp_xxx")  # Will show security warning
+
+# ❌ INSECURE - Token in CLI
+v2ray-finder -t ghp_xxx -s  # Will show security warning
+
+# ❌ INSECURE - Token in scripts visible to ps/top
+python script.py --token ghp_xxx
+```
+
+### Token Validation / اعتبارسنجی Token
+
+The library automatically validates tokens:
+
+- ✅ Length check (minimum 20 characters)
+- ✅ Format validation (alphanumeric + underscore)
+- ✅ Known prefix detection (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`)
+- ✅ Whitespace sanitization
+
+Invalid tokens are rejected with clear error messages.
+
+Tokenها به طور خودکار بررسی می‌شن:
+
+### Generating GitHub Token / ساخت Token در GitHub
+
+1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+2. Click "Generate new token (classic)"
+3. Select scopes: `public_repo` (minimum required)
+4. Copy token immediately (you won't see it again)
+5. Set as environment variable
+
+**Rate Limits:**
+- Without token: 60 requests/hour
+- With token: 5000 requests/hour
+
+---
+
 ## 📚 Library usage (Python API) / استفاده به‌صورت کتابخانه پایتونی
 
 ### Basic usage / استفاده ساده
@@ -91,8 +218,11 @@ pip install -e ".[gui,cli-rich,dev]"
 ```python
 from v2ray_finder import V2RayServerFinder
 
-# Optional GitHub token for higher rate limits
-finder = V2RayServerFinder(token=None)
+# Recommended: Use environment variable
+finder = V2RayServerFinder()  # Reads from GITHUB_TOKEN env var
+
+# Alternative: Explicit factory method
+finder = V2RayServerFinder.from_env()
 
 # 1) Fast: only curated sources
 servers = finder.get_all_servers()
@@ -120,7 +250,11 @@ print(f"Saved {count} servers to {filename}")
 ```python
 from v2ray_finder import V2RayServerFinder
 
-finder = V2RayServerFinder(token=None)
+# پیشنهادی: از environment variable استفاده کن
+finder = V2RayServerFinder()  # از GITHUB_TOKEN می‌خونه
+
+# یا به صورت صریح
+finder = V2RayServerFinder.from_env()
 
 # ۱) حالت سریع: فقط منابع شناخته‌شده
 servers = finder.get_all_servers()
@@ -155,7 +289,7 @@ from v2ray_finder import (
     NetworkError,
 )
 
-finder = V2RayServerFinder(token="YOUR_TOKEN")
+finder = V2RayServerFinder()  # Uses GITHUB_TOKEN from environment
 
 # Method 1: Using Result type (explicit error handling)
 result = finder.search_repos(keywords=["v2ray", "free"])
@@ -206,7 +340,7 @@ from v2ray_finder import (
     NetworkError,
 )
 
-finder = V2RayServerFinder(token="YOUR_TOKEN")
+finder = V2RayServerFinder()  # از GITHUB_TOKEN می‌خونه
 
 # روش ۱: استفاده از Result type (مدیریت صریح خطا)
 result = finder.search_repos(keywords=["v2ray", "free"])
@@ -389,6 +523,9 @@ for result in results:
 #### English / انگلیسی
 
 ```bash
+# Set token (recommended)
+export GITHUB_TOKEN="ghp_your_token_here"
+
 # Interactive TUI (terminal menu)
 v2ray-finder
 
@@ -401,9 +538,6 @@ v2ray-finder -s -l 200 -o servers.txt
 # Stats only
 v2ray-finder --stats-only -s
 
-# With GitHub token
-v2ray-finder -s -t YOUR_TOKEN -o servers.txt
-
 # Quiet mode (minimal output)
 v2ray-finder -q -o servers.txt
 ```
@@ -411,6 +545,9 @@ v2ray-finder -q -o servers.txt
 #### Persian / فارسی
 
 ```bash
+# تنظیم token (پیشنهادی)
+export GITHUB_TOKEN="ghp_your_token_here"
+
 # حالت تعاملی (منو در ترمینال)
 v2ray-finder
 
@@ -422,9 +559,6 @@ v2ray-finder -s -l 200 -o servers.txt
 
 # فقط آمار پروتکل‌ها
 v2ray-finder --stats-only -s
-
-# با GitHub token
-v2ray-finder -s -t YOUR_TOKEN -o servers.txt
 
 # حالت ساکت (خروجی حداقلی)
 v2ray-finder -q -o servers.txt

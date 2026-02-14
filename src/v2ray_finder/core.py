@@ -1,6 +1,8 @@
 """Core module for V2Ray server discovery with improved error handling."""
 
 import logging
+import os
+import re
 import requests
 from typing import List, Dict, Optional, Tuple, Union
 from datetime import datetime
@@ -14,6 +16,7 @@ from .exceptions import (
     AuthenticationError,
     RepositoryNotFoundError,
     ParseError,
+    ValidationError,
     ErrorType,
 )
 from .result import Result, Ok, Err
@@ -38,21 +41,128 @@ class V2RayServerFinder:
         "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Sub1.txt",
         "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/All_Configs_Sub.txt",
     ]
+    
+    # Environment variable name for token
+    TOKEN_ENV_VAR = "GITHUB_TOKEN"
 
     def __init__(self, token: Optional[str] = None, raise_errors: bool = False):
         """
         Initialize V2RayServerFinder.
 
         Args:
-            token: Optional GitHub personal access token for higher API rate limits
+            token: Optional GitHub personal access token for higher API rate limits.
+                   If not provided, will attempt to read from GITHUB_TOKEN environment variable.
+                   
+                   SECURITY WARNING: Passing tokens directly as strings can expose them in:
+                   - Process listings (ps, top)
+                   - Shell history
+                   - Application logs
+                   - Exception tracebacks
+                   
+                   RECOMMENDED: Use environment variables instead:
+                     export GITHUB_TOKEN="your_token_here"
+                     finder = V2RayServerFinder()  # Will read from env
+                   
             raise_errors: If True, raise exceptions instead of logging and returning empty results.
                          This is useful for applications that want explicit error handling.
         """
         self.headers = {"Accept": "application/vnd.github.v3+json"}
-        if token:
-            self.headers["Authorization"] = f"token {token}"
         self.raise_errors = raise_errors
         self._last_rate_limit_info: Optional[Dict] = None
+        self._token_source: str = "none"
+        
+        # Try to get token from environment if not provided
+        if token is None:
+            token = os.environ.get(self.TOKEN_ENV_VAR)
+            if token:
+                self._token_source = "environment"
+                logger.debug(f"Using GitHub token from {self.TOKEN_ENV_VAR} environment variable")
+        else:
+            self._token_source = "parameter"
+            # Warn about security risk
+            logger.warning(
+                "Security Warning: GitHub token passed as parameter. "
+                f"Consider using {self.TOKEN_ENV_VAR} environment variable instead to avoid token exposure."
+            )
+        
+        # Validate and sanitize token
+        if token:
+            token = self._validate_and_sanitize_token(token)
+            if token:  # Only set if validation passed
+                self.headers["Authorization"] = f"token {token}"
+                logger.info(f"GitHub token configured from {self._token_source}")
+            else:
+                logger.warning("Invalid token format - proceeding without authentication (rate limit: 60/hour)")
+        else:
+            logger.info("No GitHub token provided - using unauthenticated access (rate limit: 60/hour)")
+
+    def _validate_and_sanitize_token(self, token: str) -> Optional[str]:
+        """
+        Validate and sanitize GitHub token.
+        
+        Args:
+            token: Raw token string
+            
+        Returns:
+            Sanitized token if valid, None if invalid
+        """
+        # Strip whitespace
+        token = token.strip()
+        
+        # Check for empty token
+        if not token:
+            logger.error("Empty token provided")
+            return None
+        
+        # Validate token format
+        # GitHub personal access tokens typically start with ghp_ (classic) or github_pat_ (fine-grained)
+        # OAuth tokens start with gho_
+        # But we'll be lenient and accept any reasonable token format
+        
+        # Check minimum length (GitHub tokens are typically 40+ characters)
+        if len(token) < 20:
+            logger.error(f"Token too short ({len(token)} chars). GitHub tokens are typically 40+ characters.")
+            return None
+        
+        # Check for suspicious characters (tokens should be alphanumeric + underscore)
+        if not re.match(r'^[a-zA-Z0-9_]+$', token):
+            logger.error("Token contains invalid characters. GitHub tokens should be alphanumeric.")
+            return None
+        
+        # Validate known token prefixes (informational, not enforced)
+        known_prefixes = ['ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_']
+        has_known_prefix = any(token.startswith(prefix) for prefix in known_prefixes)
+        
+        if not has_known_prefix:
+            logger.warning(
+                f"Token doesn't start with a known GitHub prefix ({', '.join(known_prefixes)}). "
+                "This might be an old token format or invalid token."
+            )
+        
+        # Log token info without exposing the token itself
+        token_preview = f"{token[:4]}...{token[-4:]}" if len(token) > 8 else "****"
+        logger.debug(f"Token validated: {token_preview} ({len(token)} chars, source: {self._token_source})")
+        
+        return token
+
+    @classmethod
+    def from_env(cls, raise_errors: bool = False) -> 'V2RayServerFinder':
+        """
+        Create V2RayServerFinder instance using token from environment variable.
+        
+        This is the recommended way to initialize the finder with authentication.
+        
+        Args:
+            raise_errors: If True, raise exceptions instead of logging errors
+            
+        Returns:
+            V2RayServerFinder instance
+            
+        Example:
+            export GITHUB_TOKEN="your_token_here"
+            finder = V2RayServerFinder.from_env()
+        """
+        return cls(token=None, raise_errors=raise_errors)
 
     def _check_rate_limit(self, response: requests.Response) -> None:
         """Check and store rate limit information from response headers.
