@@ -30,6 +30,8 @@ A tool to **fetch, aggregate, validate and health-check public V2Ray server conf
 - ✅ **Health checking**: TCP connectivity, latency measurement, config validation
 - 🎯 **Quality scoring**: Rank servers by speed and reliability
 - ⚡ **Concurrent checks**: Fast async health validation
+- 🛡️ **Robust error handling**: Detailed exception hierarchy with proper error propagation
+- 📈 **Rate limit tracking**: Monitor GitHub API usage
 - ✅ **CI/CD**: Automated testing and deployment
 
 ---
@@ -135,6 +137,137 @@ for item in items:
 # ۴) ذخیره در فایل
 count, filename = finder.save_to_file("v2ray_servers.txt", limit=200)
 print(f"{count} سرور در {filename} ذخیره شد")
+```
+
+---
+
+### 🛡️ Error Handling / مدیریت خطاها
+
+**NEW in v0.2.0!** Explicit error handling with Result type and custom exceptions.
+
+#### English
+
+```python
+from v2ray_finder import (
+    V2RayServerFinder,
+    RateLimitError,
+    AuthenticationError,
+    NetworkError,
+)
+
+finder = V2RayServerFinder(token="YOUR_TOKEN")
+
+# Method 1: Using Result type (explicit error handling)
+result = finder.search_repos(keywords=["v2ray", "free"])
+
+if result.is_ok():
+    repos = result.unwrap()
+    print(f"Found {len(repos)} repositories")
+else:
+    error = result.error
+    print(f"Error: {error.message}")
+    print(f"Type: {error.error_type.value}")
+    
+    # Handle specific error types
+    if isinstance(error, RateLimitError):
+        print(f"Rate limit: {error.details['remaining']}/{error.details['limit']}")
+        print(f"Resets at: {error.details['reset_at']}")
+    elif isinstance(error, AuthenticationError):
+        print("Invalid GitHub token")
+
+# Method 2: Legacy mode (backward compatible)
+# Returns empty list on error, doesn't raise exceptions
+repos = finder.search_repos_or_empty()
+if not repos:
+    print("No repos found or error occurred")
+
+# Method 3: Raise exceptions mode
+finder_strict = V2RayServerFinder(raise_errors=True)
+try:
+    repos = finder_strict.search_repos_or_empty()
+except RateLimitError as e:
+    print(f"Rate limit exceeded: {e}")
+except NetworkError as e:
+    print(f"Network error: {e}")
+
+# Check rate limit status
+rate_info = finder.get_rate_limit_info()
+if rate_info:
+    print(f"API calls remaining: {rate_info['remaining']}/{rate_info['limit']}")
+```
+
+#### فارسی
+
+```python
+from v2ray_finder import (
+    V2RayServerFinder,
+    RateLimitError,
+    AuthenticationError,
+    NetworkError,
+)
+
+finder = V2RayServerFinder(token="YOUR_TOKEN")
+
+# روش ۱: استفاده از Result type (مدیریت صریح خطا)
+result = finder.search_repos(keywords=["v2ray", "free"])
+
+if result.is_ok():
+    repos = result.unwrap()
+    print(f"{len(repos)} ریپو پیدا شد")
+else:
+    error = result.error
+    print(f"خطا: {error.message}")
+    print(f"نوع: {error.error_type.value}")
+    
+    # مدیریت انواع خاص خطا
+    if isinstance(error, RateLimitError):
+        print(f"محدودیت: {error.details['remaining']}/{error.details['limit']}")
+        print(f"ریست می‌شه: {error.details['reset_at']}")
+    elif isinstance(error, AuthenticationError):
+        print("توکن GitHub نامعتبره")
+
+# روش ۲: حالت Legacy (سازگار با نسخه قدیم)
+# در صورت خطا لیست خالی برمی‌گردونه
+repos = finder.search_repos_or_empty()
+if not repos:
+    print("هیچ ریپویی پیدا نشد یا خطا رخ داد")
+
+# روش ۳: حالت raise exception
+finder_strict = V2RayServerFinder(raise_errors=True)
+try:
+    repos = finder_strict.search_repos_or_empty()
+except RateLimitError as e:
+    print(f"محدودیت API تمام شد: {e}")
+except NetworkError as e:
+    print(f"خطای شبکه: {e}")
+
+# بررسی وضعیت rate limit
+rate_info = finder.get_rate_limit_info()
+if rate_info:
+    print(f"درخواست باقی‌مانده: {rate_info['remaining']}/{rate_info['limit']}")
+```
+
+#### Available Exceptions / انواع Exception
+
+```python
+from v2ray_finder import (
+    V2RayFinderError,      # Base exception
+    ErrorType,             # Enum of error types
+    NetworkError,          # Network/connection errors
+    TimeoutError,          # Request timeouts
+    GitHubAPIError,        # GitHub API errors
+    RateLimitError,        # API rate limit exceeded
+    AuthenticationError,   # Invalid/expired token
+    RepositoryNotFoundError,  # Repo not found/accessible
+    ParseError,            # Config parsing errors
+    ValidationError,       # Config validation errors
+)
+
+# All exceptions have:
+# - message: str
+# - error_type: ErrorType
+# - details: dict (additional context)
+# - to_dict(): method for serialization
 ```
 
 ---

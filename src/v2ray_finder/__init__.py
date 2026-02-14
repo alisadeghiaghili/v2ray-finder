@@ -13,13 +13,43 @@ from .health_checker import (
     filter_healthy_servers,
     sort_by_quality,
 )
+from .exceptions import (
+    V2RayFinderError,
+    ErrorType,
+    NetworkError,
+    TimeoutError,
+    GitHubAPIError,
+    RateLimitError,
+    AuthenticationError,
+    RepositoryNotFoundError,
+    ParseError,
+    ValidationError,
+)
+from .result import Result, Ok, Err
 
 __all__ = [
+    # Core
     "V2RayServerFinder",
+    # Health checking
     "HealthChecker",
     "ServerHealth",
     "HealthStatus",
     "ServerValidator",
     "filter_healthy_servers",
     "sort_by_quality",
+    # Exceptions
+    "V2RayFinderError",
+    "ErrorType",
+    "NetworkError",
+    "TimeoutError",
+    "GitHubAPIError",
+    "RateLimitError",
+    "AuthenticationError",
+    "RepositoryNotFoundError",
+    "ParseError",
+    "ValidationError",
+    # Result type
+    "Result",
+    "Ok",
+    "Err",
 ]

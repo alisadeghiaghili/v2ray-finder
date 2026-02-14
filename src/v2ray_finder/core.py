@@ -1,9 +1,22 @@
-"""Core module for V2Ray server discovery."""
+"""Core module for V2Ray server discovery with improved error handling."""
 
 import logging
 import requests
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from datetime import datetime
+
+from .exceptions import (
+    V2RayFinderError,
+    NetworkError,
+    TimeoutError,
+    GitHubAPIError,
+    RateLimitError,
+    AuthenticationError,
+    RepositoryNotFoundError,
+    ParseError,
+    ErrorType,
+)
+from .result import Result, Ok, Err
 
 
 logger = logging.getLogger(__name__)
@@ -26,20 +39,78 @@ class V2RayServerFinder:
         "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/All_Configs_Sub.txt",
     ]
 
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: Optional[str] = None, raise_errors: bool = False):
         """
         Initialize V2RayServerFinder.
 
         Args:
             token: Optional GitHub personal access token for higher API rate limits
+            raise_errors: If True, raise exceptions instead of logging and returning empty results.
+                         This is useful for applications that want explicit error handling.
         """
         self.headers = {"Accept": "application/vnd.github.v3+json"}
         if token:
             self.headers["Authorization"] = f"token {token}"
+        self.raise_errors = raise_errors
+        self._last_rate_limit_info: Optional[Dict] = None
+
+    def _check_rate_limit(self, response: requests.Response) -> None:
+        """Check and store rate limit information from response headers.
+        
+        Args:
+            response: HTTP response object
+            
+        Raises:
+            RateLimitError: If rate limit is exceeded
+        """
+        if response.status_code == 403 or response.status_code == 429:
+            limit = response.headers.get('X-RateLimit-Limit')
+            remaining = response.headers.get('X-RateLimit-Remaining')
+            reset = response.headers.get('X-RateLimit-Reset')
+            
+            self._last_rate_limit_info = {
+                'limit': int(limit) if limit else None,
+                'remaining': int(remaining) if remaining else None,
+                'reset': int(reset) if reset else None,
+            }
+            
+            if remaining == '0' or response.status_code == 429:
+                raise RateLimitError(
+                    limit=self._last_rate_limit_info['limit'],
+                    remaining=self._last_rate_limit_info['remaining'],
+                    reset_time=self._last_rate_limit_info['reset'],
+                )
+        else:
+            # Update rate limit info from successful requests
+            limit = response.headers.get('X-RateLimit-Limit')
+            remaining = response.headers.get('X-RateLimit-Remaining')
+            reset = response.headers.get('X-RateLimit-Reset')
+            
+            if limit and remaining:
+                self._last_rate_limit_info = {
+                    'limit': int(limit),
+                    'remaining': int(remaining),
+                    'reset': int(reset) if reset else None,
+                }
+                
+                # Warn if getting close to limit
+                if int(remaining) < 10:
+                    logger.warning(
+                        f"GitHub API rate limit low: {remaining}/{limit} remaining. "
+                        f"Consider using a GitHub token for higher limits."
+                    )
+
+    def get_rate_limit_info(self) -> Optional[Dict]:
+        """Get the last known rate limit information.
+        
+        Returns:
+            Dict with 'limit', 'remaining', and 'reset' keys, or None if no requests made yet.
+        """
+        return self._last_rate_limit_info.copy() if self._last_rate_limit_info else None
 
     def search_repos(
         self, keywords: Optional[List[str]] = None, max_results: int = 30
-    ) -> List[Dict]:
+    ) -> Result[List[Dict], V2RayFinderError]:
         """
         Search GitHub repositories matching keywords.
 
@@ -48,7 +119,8 @@ class V2RayServerFinder:
             max_results: Maximum number of results to return
 
         Returns:
-            List of repository metadata dictionaries
+            Result[List[Dict], V2RayFinderError]: Ok with list of repository metadata,
+                                                   or Err with error details
         """
         if keywords is None:
             keywords = ["v2ray", "free", "config"]
@@ -66,6 +138,16 @@ class V2RayServerFinder:
             response = requests.get(
                 url, headers=self.headers, params=params, timeout=10
             )
+            
+            # Check rate limits first
+            self._check_rate_limit(response)
+            
+            # Handle HTTP errors
+            if response.status_code == 401:
+                raise AuthenticationError("Invalid or expired GitHub token")
+            elif response.status_code == 404:
+                raise GitHubAPIError("GitHub API endpoint not found", status_code=404)
+            
             response.raise_for_status()
             data = response.json()
 
@@ -81,12 +163,49 @@ class V2RayServerFinder:
                         "url": repo["html_url"],
                     }
                 )
-            return results
+            
+            logger.info(f"Found {len(results)} repositories matching '{query}'")
+            return Ok(results)
+            
+        except RateLimitError as e:
+            logger.error(f"GitHub rate limit exceeded: {e}")
+            return Err(e)
+        except AuthenticationError as e:
+            logger.error(f"Authentication failed: {e}")
+            return Err(e)
+        except requests.exceptions.Timeout as e:
+            error = TimeoutError(f"Request timed out while searching repositories", url=url, timeout=10.0)
+            logger.error(str(error))
+            return Err(error)
+        except requests.exceptions.ConnectionError as e:
+            error = NetworkError(f"Connection error while searching repositories: {e}", url=url)
+            logger.error(str(error))
+            return Err(error)
+        except requests.exceptions.RequestException as e:
+            error = GitHubAPIError(f"GitHub API request failed: {e}", status_code=getattr(response, 'status_code', None) if 'response' in locals() else None)
+            logger.error(str(error))
+            return Err(error)
         except Exception as e:
-            logger.error(f"Repository search failed: {e}")
+            error = V2RayFinderError(f"Unexpected error during repository search: {e}", ErrorType.UNKNOWN_ERROR)
+            logger.error(str(error), exc_info=True)
+            return Err(error)
+
+    def search_repos_or_empty(self, keywords: Optional[List[str]] = None, max_results: int = 30) -> List[Dict]:
+        """Legacy wrapper for backward compatibility. Returns empty list on error.
+        
+        Use search_repos() directly for explicit error handling.
+        """
+        result = self.search_repos(keywords, max_results)
+        if result.is_ok():
+            return result.unwrap()
+        else:
+            if self.raise_errors:
+                raise result.error
             return []
 
-    def get_repo_files(self, repo_full_name: str, path: str = "") -> List[Dict]:
+    def get_repo_files(
+        self, repo_full_name: str, path: str = ""
+    ) -> Result[List[Dict], V2RayFinderError]:
         """
         Get config files from a GitHub repository.
 
@@ -95,12 +214,22 @@ class V2RayServerFinder:
             path: Optional subdirectory path
 
         Returns:
-            List of file metadata dictionaries with download URLs
+            Result[List[Dict], V2RayFinderError]: Ok with list of file metadata,
+                                                   or Err with error details
         """
         url = f"{self.BASE_URL}/repos/{repo_full_name}/contents/{path}"
 
         try:
             response = requests.get(url, headers=self.headers, timeout=10)
+            
+            # Check rate limits
+            self._check_rate_limit(response)
+            
+            if response.status_code == 404:
+                raise RepositoryNotFoundError(repo_full_name)
+            elif response.status_code == 401:
+                raise AuthenticationError()
+                
             response.raise_for_status()
             files = response.json()
 
@@ -119,9 +248,41 @@ class V2RayServerFinder:
                                 "size": file["size"],
                             }
                         )
-            return config_files
+            
+            logger.info(f"Found {len(config_files)} config files in {repo_full_name}")
+            return Ok(config_files)
+            
+        except (RateLimitError, AuthenticationError, RepositoryNotFoundError) as e:
+            logger.error(str(e))
+            return Err(e)
+        except requests.exceptions.Timeout as e:
+            error = TimeoutError(f"Request timed out while fetching files from {repo_full_name}", url=url, timeout=10.0)
+            logger.error(str(error))
+            return Err(error)
+        except requests.exceptions.ConnectionError as e:
+            error = NetworkError(f"Connection error while fetching files: {e}", url=url)
+            logger.error(str(error))
+            return Err(error)
+        except requests.exceptions.RequestException as e:
+            error = GitHubAPIError(f"Failed to fetch files from {repo_full_name}: {e}")
+            logger.error(str(error))
+            return Err(error)
         except Exception as e:
-            logger.error(f"Failed to get files from {repo_full_name}: {e}")
+            error = V2RayFinderError(f"Unexpected error while fetching files: {e}", ErrorType.UNKNOWN_ERROR)
+            logger.error(str(error), exc_info=True)
+            return Err(error)
+
+    def get_repo_files_or_empty(self, repo_full_name: str, path: str = "") -> List[Dict]:
+        """Legacy wrapper for backward compatibility. Returns empty list on error.
+        
+        Use get_repo_files() directly for explicit error handling.
+        """
+        result = self.get_repo_files(repo_full_name, path)
+        if result.is_ok():
+            return result.unwrap()
+        else:
+            if self.raise_errors:
+                raise result.error
             return []
 
     def _parse_servers(self, content: str) -> List[str]:
@@ -144,22 +305,56 @@ class V2RayServerFinder:
 
         return servers
 
-    def get_servers_from_url(self, url: str) -> List[str]:
+    def get_servers_from_url(
+        self, url: str, timeout: float = 10.0
+    ) -> Result[List[str], V2RayFinderError]:
         """
         Fetch and parse servers from a URL.
 
         Args:
             url: URL to fetch server configs from
+            timeout: Request timeout in seconds
 
         Returns:
-            List of parsed server configs
+            Result[List[str], V2RayFinderError]: Ok with parsed server configs,
+                                                  or Err with error details
         """
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=timeout)
             response.raise_for_status()
-            return self._parse_servers(response.text)
+            
+            servers = self._parse_servers(response.text)
+            logger.info(f"Fetched {len(servers)} servers from {url}")
+            return Ok(servers)
+            
+        except requests.exceptions.Timeout as e:
+            error = TimeoutError(f"Request timed out while fetching from {url}", url=url, timeout=timeout)
+            logger.error(str(error))
+            return Err(error)
+        except requests.exceptions.ConnectionError as e:
+            error = NetworkError(f"Connection error: {e}", url=url)
+            logger.error(str(error))
+            return Err(error)
+        except requests.exceptions.RequestException as e:
+            error = NetworkError(f"Failed to fetch from {url}: {e}", url=url)
+            logger.error(str(error))
+            return Err(error)
         except Exception as e:
-            logger.error(f"Failed to fetch from {url}: {e}")
+            error = ParseError(f"Error parsing content from {url}: {e}")
+            logger.error(str(error), exc_info=True)
+            return Err(error)
+
+    def get_servers_from_url_or_empty(self, url: str, timeout: float = 10.0) -> List[str]:
+        """Legacy wrapper for backward compatibility. Returns empty list on error.
+        
+        Use get_servers_from_url() directly for explicit error handling.
+        """
+        result = self.get_servers_from_url(url, timeout)
+        if result.is_ok():
+            return result.unwrap()
+        else:
+            if self.raise_errors:
+                raise result.error
             return []
 
     def get_servers_from_github(
@@ -174,23 +369,56 @@ class V2RayServerFinder:
 
         Returns:
             Deduplicated list of server configs
+            
+        Note:
+            This method uses legacy error handling (returns empty on error) for backward compatibility.
+            Check get_rate_limit_info() after calling to see if rate limits were hit.
         """
         if search_keywords is None:
             search_keywords = ["free-v2ray", "v2ray-config"]
 
         all_servers = []
+        errors = []
 
         for keyword in search_keywords:
-            repos = self.search_repos(
+            repos_result = self.search_repos(
                 keywords=[keyword, "v2ray"], max_results=max_repos
             )
+            
+            if repos_result.is_err():
+                errors.append(repos_result.error)
+                if self.raise_errors:
+                    raise repos_result.error
+                continue
+                
+            repos = repos_result.unwrap()
 
             for repo in repos[:max_repos]:
-                files = self.get_repo_files(repo["full_name"])
+                files_result = self.get_repo_files(repo["full_name"])
+                
+                if files_result.is_err():
+                    errors.append(files_result.error)
+                    if self.raise_errors:
+                        raise files_result.error
+                    continue
+                    
+                files = files_result.unwrap()
+                
                 for file in files:
                     if file["download_url"]:
-                        servers = self.get_servers_from_url(file["download_url"])
-                        all_servers.extend(servers)
+                        servers_result = self.get_servers_from_url(file["download_url"])
+                        
+                        if servers_result.is_ok():
+                            all_servers.extend(servers_result.unwrap())
+                        else:
+                            errors.append(servers_result.error)
+                            if self.raise_errors:
+                                raise servers_result.error
+
+        if errors:
+            logger.warning(f"Encountered {len(errors)} errors during GitHub search")
+            for error in errors:
+                logger.debug(f"  - {error}")
 
         return list(dict.fromkeys(all_servers))
 
@@ -200,12 +428,25 @@ class V2RayServerFinder:
 
         Returns:
             Deduplicated list of server configs from known sources
+            
+        Note:
+            This method uses legacy error handling for backward compatibility.
         """
         all_servers = []
+        errors = []
 
         for url in self.DIRECT_SOURCES:
-            servers = self.get_servers_from_url(url)
-            all_servers.extend(servers)
+            result = self.get_servers_from_url(url)
+            
+            if result.is_ok():
+                all_servers.extend(result.unwrap())
+            else:
+                errors.append(result.error)
+                if self.raise_errors:
+                    raise result.error
+
+        if errors:
+            logger.warning(f"Failed to fetch from {len(errors)}/{len(self.DIRECT_SOURCES)} sources")
 
         return list(dict.fromkeys(all_servers))
 
