@@ -1,6 +1,19 @@
 [flake8]
 max-line-length = 88
-extend-ignore = E203, W503, E501
+# Black compatibility ignores:
+# E203: whitespace before ':'
+# W503: line break before binary operator (black style)
+# E501: line too long (handled by black)
+# E402: module level import not at top (for conditional imports)
+# E731: do not assign a lambda expression (sometimes needed)
+# E266: too many leading '#' for block comment
+extend-ignore = E203, W503, E501, E402, E731, E266
+
+# Per-file ignores for specific cases
+per-file-ignores =
+    __init__.py:F401,F403
+    tests/*:E501,F401,F811
+
 exclude =
     .git,
     __pycache__,
@@ -10,4 +23,14 @@ exclude =
     env,
     build,
     dist,
-    *.egg-info
+    *.egg-info,
+    .eggs,
+    .pytest_cache,
+    .mypy_cache,
+    .tox
+
+# Complexity settings
+max-complexity = 15
+
+# Import order (compatible with isort/black)
+max-doc-length = 88
