@@ -3,8 +3,9 @@
 Updated to work with new error handling.
 """
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 import requests
 
 from v2ray_finder import V2RayServerFinder
@@ -40,9 +41,12 @@ ssr://config5
 invalid://config6
     """
     servers = finder._parse_servers(content)
-    
+
     assert len(servers) == 5
-    assert all(s.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://")) for s in servers)
+    assert all(
+        s.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://"))
+        for s in servers
+    )
 
 
 def test_get_all_servers_without_github_search(finder):
@@ -50,10 +54,10 @@ def test_get_all_servers_without_github_search(finder):
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = "vmess://test1\nvless://test2"
-    
-    with patch('requests.get', return_value=mock_response):
+
+    with patch("requests.get", return_value=mock_response):
         servers = finder.get_all_servers(use_github_search=False)
-        
+
         # Should have servers from all DIRECT_SOURCES
         assert len(servers) > 0
         assert all(isinstance(s, str) for s in servers)
@@ -64,10 +68,10 @@ def test_get_servers_sorted(finder):
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = "vmess://config1\nvless://config2"
-    
-    with patch('requests.get', return_value=mock_response):
+
+    with patch("requests.get", return_value=mock_response):
         servers = finder.get_servers_sorted(limit=5, use_github_search=False)
-        
+
         assert len(servers) > 0
         for server in servers:
             assert "index" in server
@@ -83,10 +87,10 @@ def test_deduplication(finder):
     mock_response.status_code = 200
     # Same server repeated
     mock_response.text = "vmess://config1\nvmess://config1\nvless://config2"
-    
-    with patch('requests.get', return_value=mock_response):
+
+    with patch("requests.get", return_value=mock_response):
         servers = finder.get_all_servers(use_github_search=False)
-        
+
         # Should have unique servers only
         assert len(servers) == len(set(servers))
 
@@ -96,24 +100,27 @@ def test_save_to_file(finder, tmp_path):
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = "vmess://config1\nvless://config2\ntrojan://config3"
-    
+
     test_file = tmp_path / "test_servers.txt"
-    
-    with patch('requests.get', return_value=mock_response):
+
+    with patch("requests.get", return_value=mock_response):
         count, filename = finder.save_to_file(
             filename=str(test_file),
             limit=10,
             use_github_search=False,
         )
-        
+
         assert count > 0
         assert test_file.exists()
-        
+
         # Verify file content
         content = test_file.read_text()
-        lines = [l.strip() for l in content.split('\n') if l.strip()]
+        lines = [l.strip() for l in content.split("\n") if l.strip()]
         assert len(lines) > 0
-        assert all(l.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://")) for l in lines)
+        assert all(
+            l.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://"))
+            for l in lines
+        )
 
 
 def test_empty_response_handling(finder):
@@ -121,10 +128,10 @@ def test_empty_response_handling(finder):
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = ""  # Empty content
-    
-    with patch('requests.get', return_value=mock_response):
+
+    with patch("requests.get", return_value=mock_response):
         result = finder.get_servers_from_url("https://example.com")
-        
+
         assert result.is_ok()
         servers = result.unwrap()
         assert len(servers) == 0
@@ -141,10 +148,10 @@ ss://config4
 ssr://config5
     """
     servers = finder._parse_servers(content)
-    
-    protocols = [s.split('://')[0] for s in servers]
-    assert 'vmess' in protocols
-    assert 'vless' in protocols
-    assert 'trojan' in protocols
-    assert 'ss' in protocols
-    assert 'ssr' in protocols
+
+    protocols = [s.split("://")[0] for s in servers]
+    assert "vmess" in protocols
+    assert "vless" in protocols
+    assert "trojan" in protocols
+    assert "ss" in protocols
+    assert "ssr" in protocols

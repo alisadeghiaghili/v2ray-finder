@@ -5,27 +5,27 @@ and user-friendly error messages.
 """
 
 from enum import Enum
-from typing import Optional, Any
+from typing import Any, Optional
 
 
 class ErrorType(Enum):
     """Types of errors that can occur during server discovery."""
-    
+
     # Network errors
     NETWORK_ERROR = "network_error"
     TIMEOUT_ERROR = "timeout_error"
     CONNECTION_ERROR = "connection_error"
-    
+
     # GitHub API errors
     GITHUB_API_ERROR = "github_api_error"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     AUTHENTICATION_ERROR = "authentication_error"
     REPOSITORY_NOT_FOUND = "repository_not_found"
-    
+
     # Parsing errors
     PARSE_ERROR = "parse_error"
     INVALID_CONFIG = "invalid_config"
-    
+
     # General errors
     UNKNOWN_ERROR = "unknown_error"
     VALIDATION_ERROR = "validation_error"
@@ -33,13 +33,13 @@ class ErrorType(Enum):
 
 class V2RayFinderError(Exception):
     """Base exception for all v2ray_finder errors.
-    
+
     Attributes:
         message: Human-readable error message
         error_type: Type of error from ErrorType enum
         details: Optional dict with additional error context
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -50,14 +50,14 @@ class V2RayFinderError(Exception):
         self.error_type = error_type
         self.details = details or {}
         super().__init__(self.message)
-    
+
     def __str__(self) -> str:
         base = f"[{self.error_type.value}] {self.message}"
         if self.details:
             details_str = ", ".join(f"{k}={v}" for k, v in self.details.items())
             return f"{base} ({details_str})"
         return base
-    
+
     def to_dict(self) -> dict:
         """Convert exception to dictionary for logging/serialization."""
         return {
@@ -69,7 +69,7 @@ class V2RayFinderError(Exception):
 
 class NetworkError(V2RayFinderError):
     """Raised when network-related errors occur."""
-    
+
     def __init__(self, message: str, url: Optional[str] = None, **kwargs):
         details = {"url": url} if url else {}
         details.update(kwargs)
@@ -78,8 +78,10 @@ class NetworkError(V2RayFinderError):
 
 class TimeoutError(V2RayFinderError):
     """Raised when a request times out."""
-    
-    def __init__(self, message: str, url: Optional[str] = None, timeout: Optional[float] = None):
+
+    def __init__(
+        self, message: str, url: Optional[str] = None, timeout: Optional[float] = None
+    ):
         details = {}
         if url:
             details["url"] = url
@@ -90,13 +92,13 @@ class TimeoutError(V2RayFinderError):
 
 class GitHubAPIError(V2RayFinderError):
     """Raised when GitHub API returns an error."""
-    
+
     def __init__(
         self,
         message: str,
         status_code: Optional[int] = None,
         error_type: ErrorType = ErrorType.GITHUB_API_ERROR,
-        **kwargs
+        **kwargs,
     ):
         details = {"status_code": status_code} if status_code else {}
         details.update(kwargs)
@@ -105,13 +107,13 @@ class GitHubAPIError(V2RayFinderError):
 
 class RateLimitError(GitHubAPIError):
     """Raised when GitHub API rate limit is exceeded.
-    
+
     Attributes:
         limit: Total rate limit
         remaining: Remaining requests
         reset_time: Unix timestamp when rate limit resets
     """
-    
+
     def __init__(
         self,
         message: str = "GitHub API rate limit exceeded",
@@ -127,21 +129,29 @@ class RateLimitError(GitHubAPIError):
         if reset_time is not None:
             details["reset_time"] = reset_time
             from datetime import datetime
+
             details["reset_at"] = datetime.fromtimestamp(reset_time).isoformat()
-        
-        super().__init__(message, status_code=429, error_type=ErrorType.RATE_LIMIT_EXCEEDED, **details)
+
+        super().__init__(
+            message,
+            status_code=429,
+            error_type=ErrorType.RATE_LIMIT_EXCEEDED,
+            **details,
+        )
 
 
 class AuthenticationError(GitHubAPIError):
     """Raised when GitHub authentication fails."""
-    
+
     def __init__(self, message: str = "GitHub authentication failed"):
-        super().__init__(message, status_code=401, error_type=ErrorType.AUTHENTICATION_ERROR)
+        super().__init__(
+            message, status_code=401, error_type=ErrorType.AUTHENTICATION_ERROR
+        )
 
 
 class RepositoryNotFoundError(GitHubAPIError):
     """Raised when a repository is not found or not accessible."""
-    
+
     def __init__(self, repo_name: str):
         message = f"Repository not found or not accessible: {repo_name}"
         super().__init__(
@@ -154,17 +164,21 @@ class RepositoryNotFoundError(GitHubAPIError):
 
 class ParseError(V2RayFinderError):
     """Raised when parsing server configs fails."""
-    
+
     def __init__(self, message: str, content_preview: Optional[str] = None):
         details = {}
         if content_preview:
-            details["content_preview"] = content_preview[:100] + "..." if len(content_preview) > 100 else content_preview
+            details["content_preview"] = (
+                content_preview[:100] + "..."
+                if len(content_preview) > 100
+                else content_preview
+            )
         super().__init__(message, ErrorType.PARSE_ERROR, details)
 
 
 class ValidationError(V2RayFinderError):
     """Raised when server config validation fails."""
-    
+
     def __init__(self, message: str, config: Optional[str] = None):
         details = {}
         if config:

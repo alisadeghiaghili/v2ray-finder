@@ -2,15 +2,16 @@
 
 import argparse
 import sys
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
-from rich.prompt import Prompt, IntPrompt
-from rich import box
-from rich.markdown import Markdown
-from .core import V2RayServerFinder
 
+from rich import box
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.prompt import IntPrompt, Prompt
+from rich.table import Table
+
+from .core import V2RayServerFinder
 
 console = Console()
 
@@ -23,7 +24,9 @@ def print_welcome():
 **Fetch V2Ray servers from GitHub and curated sources**
     """
     console.print(Markdown(welcome))
-    console.print(Panel("Built with ❤️ for freedom", style="bold cyan", box=box.ROUNDED))
+    console.print(
+        Panel("Built with ❤️ for freedom", style="bold cyan", box=box.ROUNDED)
+    )
 
 
 def fetch_servers(finder, use_search=False, verbose=True):

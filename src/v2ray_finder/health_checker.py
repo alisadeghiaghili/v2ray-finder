@@ -241,9 +241,7 @@ class HealthChecker:
         except Exception as e:
             return False, None, f"Connection failed: {str(e)}"
 
-    async def check_server_health(
-        self, config: str, protocol: str
-    ) -> ServerHealth:
+    async def check_server_health(self, config: str, protocol: str) -> ServerHealth:
         """Perform full health check on a single server.
 
         Args:
@@ -254,9 +252,7 @@ class HealthChecker:
             ServerHealth object with check results
         """
         # Step 1: Validate config format
-        is_valid, validation_error, host, port = self.validator.validate_config(
-            config
-        )
+        is_valid, validation_error, host, port = self.validator.validate_config(config)
 
         if not is_valid:
             return ServerHealth(
@@ -268,9 +264,7 @@ class HealthChecker:
 
         # Step 2: Check connectivity (if we have host/port)
         if host and port:
-            is_reachable, latency, error = await self.check_tcp_connectivity(
-                host, port
-            )
+            is_reachable, latency, error = await self.check_tcp_connectivity(host, port)
 
             if is_reachable:
                 status = (
@@ -320,9 +314,7 @@ class HealthChecker:
             async with semaphore:
                 return await self.check_server_health(config, protocol)
 
-        tasks = [
-            check_with_semaphore(config, protocol) for config, protocol in servers
-        ]
+        tasks = [check_with_semaphore(config, protocol) for config, protocol in servers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Filter out exceptions and return valid results

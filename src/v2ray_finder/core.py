@@ -3,24 +3,24 @@
 import logging
 import os
 import re
-import requests
-from typing import List, Dict, Optional, Tuple, Union
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple, Union
+
+import requests
 
 from .exceptions import (
-    V2RayFinderError,
-    NetworkError,
-    TimeoutError,
-    GitHubAPIError,
-    RateLimitError,
     AuthenticationError,
-    RepositoryNotFoundError,
-    ParseError,
-    ValidationError,
     ErrorType,
+    GitHubAPIError,
+    NetworkError,
+    ParseError,
+    RateLimitError,
+    RepositoryNotFoundError,
+    TimeoutError,
+    V2RayFinderError,
+    ValidationError,
 )
-from .result import Result, Ok, Err
-
+from .result import Err, Ok, Result
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class V2RayServerFinder:
         "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Sub1.txt",
         "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/All_Configs_Sub.txt",
     ]
-    
+
     # Environment variable name for token
     TOKEN_ENV_VAR = "GITHUB_TOKEN"
 
@@ -52,17 +52,17 @@ class V2RayServerFinder:
         Args:
             token: Optional GitHub personal access token for higher API rate limits.
                    If not provided, will attempt to read from GITHUB_TOKEN environment variable.
-                   
+
                    SECURITY WARNING: Passing tokens directly as strings can expose them in:
                    - Process listings (ps, top)
                    - Shell history
                    - Application logs
                    - Exception tracebacks
-                   
+
                    RECOMMENDED: Use environment variables instead:
                      export GITHUB_TOKEN="your_token_here"
                      finder = V2RayServerFinder()  # Will read from env
-                   
+
             raise_errors: If True, raise exceptions instead of logging and returning empty results.
                          This is useful for applications that want explicit error handling.
         """
@@ -70,13 +70,15 @@ class V2RayServerFinder:
         self.raise_errors = raise_errors
         self._last_rate_limit_info: Optional[Dict] = None
         self._token_source: str = "none"
-        
+
         # Try to get token from environment if not provided
         if token is None:
             token = os.environ.get(self.TOKEN_ENV_VAR)
             if token:
                 self._token_source = "environment"
-                logger.debug(f"Using GitHub token from {self.TOKEN_ENV_VAR} environment variable")
+                logger.debug(
+                    f"Using GitHub token from {self.TOKEN_ENV_VAR} environment variable"
+                )
         else:
             self._token_source = "parameter"
             # Warn about security risk
@@ -84,7 +86,7 @@ class V2RayServerFinder:
                 "Security Warning: GitHub token passed as parameter. "
                 f"Consider using {self.TOKEN_ENV_VAR} environment variable instead to avoid token exposure."
             )
-        
+
         # Validate and sanitize token
         if token:
             token = self._validate_and_sanitize_token(token)
@@ -92,72 +94,82 @@ class V2RayServerFinder:
                 self.headers["Authorization"] = f"token {token}"
                 logger.info(f"GitHub token configured from {self._token_source}")
             else:
-                logger.warning("Invalid token format - proceeding without authentication (rate limit: 60/hour)")
+                logger.warning(
+                    "Invalid token format - proceeding without authentication (rate limit: 60/hour)"
+                )
         else:
-            logger.info("No GitHub token provided - using unauthenticated access (rate limit: 60/hour)")
+            logger.info(
+                "No GitHub token provided - using unauthenticated access (rate limit: 60/hour)"
+            )
 
     def _validate_and_sanitize_token(self, token: str) -> Optional[str]:
         """
         Validate and sanitize GitHub token.
-        
+
         Args:
             token: Raw token string
-            
+
         Returns:
             Sanitized token if valid, None if invalid
         """
         # Strip whitespace
         token = token.strip()
-        
+
         # Check for empty token
         if not token:
             logger.error("Empty token provided")
             return None
-        
+
         # Validate token format
         # GitHub personal access tokens typically start with ghp_ (classic) or github_pat_ (fine-grained)
         # OAuth tokens start with gho_
         # But we'll be lenient and accept any reasonable token format
-        
+
         # Check minimum length (GitHub tokens are typically 40+ characters)
         if len(token) < 20:
-            logger.error(f"Token too short ({len(token)} chars). GitHub tokens are typically 40+ characters.")
+            logger.error(
+                f"Token too short ({len(token)} chars). GitHub tokens are typically 40+ characters."
+            )
             return None
-        
+
         # Check for suspicious characters (tokens should be alphanumeric + underscore)
-        if not re.match(r'^[a-zA-Z0-9_]+$', token):
-            logger.error("Token contains invalid characters. GitHub tokens should be alphanumeric.")
+        if not re.match(r"^[a-zA-Z0-9_]+$", token):
+            logger.error(
+                "Token contains invalid characters. GitHub tokens should be alphanumeric."
+            )
             return None
-        
+
         # Validate known token prefixes (informational, not enforced)
-        known_prefixes = ['ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_']
+        known_prefixes = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"]
         has_known_prefix = any(token.startswith(prefix) for prefix in known_prefixes)
-        
+
         if not has_known_prefix:
             logger.warning(
                 f"Token doesn't start with a known GitHub prefix ({', '.join(known_prefixes)}). "
                 "This might be an old token format or invalid token."
             )
-        
+
         # Log token info without exposing the token itself
         token_preview = f"{token[:4]}...{token[-4:]}" if len(token) > 8 else "****"
-        logger.debug(f"Token validated: {token_preview} ({len(token)} chars, source: {self._token_source})")
-        
+        logger.debug(
+            f"Token validated: {token_preview} ({len(token)} chars, source: {self._token_source})"
+        )
+
         return token
 
     @classmethod
-    def from_env(cls, raise_errors: bool = False) -> 'V2RayServerFinder':
+    def from_env(cls, raise_errors: bool = False) -> "V2RayServerFinder":
         """
         Create V2RayServerFinder instance using token from environment variable.
-        
+
         This is the recommended way to initialize the finder with authentication.
-        
+
         Args:
             raise_errors: If True, raise exceptions instead of logging errors
-            
+
         Returns:
             V2RayServerFinder instance
-            
+
         Example:
             export GITHUB_TOKEN="your_token_here"
             finder = V2RayServerFinder.from_env()
@@ -166,43 +178,43 @@ class V2RayServerFinder:
 
     def _check_rate_limit(self, response: requests.Response) -> None:
         """Check and store rate limit information from response headers.
-        
+
         Args:
             response: HTTP response object
-            
+
         Raises:
             RateLimitError: If rate limit is exceeded
         """
         if response.status_code == 403 or response.status_code == 429:
-            limit = response.headers.get('X-RateLimit-Limit')
-            remaining = response.headers.get('X-RateLimit-Remaining')
-            reset = response.headers.get('X-RateLimit-Reset')
-            
+            limit = response.headers.get("X-RateLimit-Limit")
+            remaining = response.headers.get("X-RateLimit-Remaining")
+            reset = response.headers.get("X-RateLimit-Reset")
+
             self._last_rate_limit_info = {
-                'limit': int(limit) if limit else None,
-                'remaining': int(remaining) if remaining else None,
-                'reset': int(reset) if reset else None,
+                "limit": int(limit) if limit else None,
+                "remaining": int(remaining) if remaining else None,
+                "reset": int(reset) if reset else None,
             }
-            
-            if remaining == '0' or response.status_code == 429:
+
+            if remaining == "0" or response.status_code == 429:
                 raise RateLimitError(
-                    limit=self._last_rate_limit_info['limit'],
-                    remaining=self._last_rate_limit_info['remaining'],
-                    reset_time=self._last_rate_limit_info['reset'],
+                    limit=self._last_rate_limit_info["limit"],
+                    remaining=self._last_rate_limit_info["remaining"],
+                    reset_time=self._last_rate_limit_info["reset"],
                 )
         else:
             # Update rate limit info from successful requests
-            limit = response.headers.get('X-RateLimit-Limit')
-            remaining = response.headers.get('X-RateLimit-Remaining')
-            reset = response.headers.get('X-RateLimit-Reset')
-            
+            limit = response.headers.get("X-RateLimit-Limit")
+            remaining = response.headers.get("X-RateLimit-Remaining")
+            reset = response.headers.get("X-RateLimit-Reset")
+
             if limit and remaining:
                 self._last_rate_limit_info = {
-                    'limit': int(limit),
-                    'remaining': int(remaining),
-                    'reset': int(reset) if reset else None,
+                    "limit": int(limit),
+                    "remaining": int(remaining),
+                    "reset": int(reset) if reset else None,
                 }
-                
+
                 # Warn if getting close to limit
                 if int(remaining) < 10:
                     logger.warning(
@@ -212,7 +224,7 @@ class V2RayServerFinder:
 
     def get_rate_limit_info(self) -> Optional[Dict]:
         """Get the last known rate limit information.
-        
+
         Returns:
             Dict with 'limit', 'remaining', and 'reset' keys, or None if no requests made yet.
         """
@@ -248,16 +260,16 @@ class V2RayServerFinder:
             response = requests.get(
                 url, headers=self.headers, params=params, timeout=10
             )
-            
+
             # Check rate limits first
             self._check_rate_limit(response)
-            
+
             # Handle HTTP errors
             if response.status_code == 401:
                 raise AuthenticationError("Invalid or expired GitHub token")
             elif response.status_code == 404:
                 raise GitHubAPIError("GitHub API endpoint not found", status_code=404)
-            
+
             response.raise_for_status()
             data = response.json()
 
@@ -273,10 +285,10 @@ class V2RayServerFinder:
                         "url": repo["html_url"],
                     }
                 )
-            
+
             logger.info(f"Found {len(results)} repositories matching '{query}'")
             return Ok(results)
-            
+
         except RateLimitError as e:
             logger.error(f"GitHub rate limit exceeded: {e}")
             return Err(e)
@@ -284,25 +296,41 @@ class V2RayServerFinder:
             logger.error(f"Authentication failed: {e}")
             return Err(e)
         except requests.exceptions.Timeout as e:
-            error = TimeoutError(f"Request timed out while searching repositories", url=url, timeout=10.0)
+            error = TimeoutError(
+                f"Request timed out while searching repositories", url=url, timeout=10.0
+            )
             logger.error(str(error))
             return Err(error)
         except requests.exceptions.ConnectionError as e:
-            error = NetworkError(f"Connection error while searching repositories: {e}", url=url)
+            error = NetworkError(
+                f"Connection error while searching repositories: {e}", url=url
+            )
             logger.error(str(error))
             return Err(error)
         except requests.exceptions.RequestException as e:
-            error = GitHubAPIError(f"GitHub API request failed: {e}", status_code=getattr(response, 'status_code', None) if 'response' in locals() else None)
+            error = GitHubAPIError(
+                f"GitHub API request failed: {e}",
+                status_code=(
+                    getattr(response, "status_code", None)
+                    if "response" in locals()
+                    else None
+                ),
+            )
             logger.error(str(error))
             return Err(error)
         except Exception as e:
-            error = V2RayFinderError(f"Unexpected error during repository search: {e}", ErrorType.UNKNOWN_ERROR)
+            error = V2RayFinderError(
+                f"Unexpected error during repository search: {e}",
+                ErrorType.UNKNOWN_ERROR,
+            )
             logger.error(str(error), exc_info=True)
             return Err(error)
 
-    def search_repos_or_empty(self, keywords: Optional[List[str]] = None, max_results: int = 30) -> List[Dict]:
+    def search_repos_or_empty(
+        self, keywords: Optional[List[str]] = None, max_results: int = 30
+    ) -> List[Dict]:
         """Legacy wrapper for backward compatibility. Returns empty list on error.
-        
+
         Use search_repos() directly for explicit error handling.
         """
         result = self.search_repos(keywords, max_results)
@@ -331,15 +359,15 @@ class V2RayServerFinder:
 
         try:
             response = requests.get(url, headers=self.headers, timeout=10)
-            
+
             # Check rate limits
             self._check_rate_limit(response)
-            
+
             if response.status_code == 404:
                 raise RepositoryNotFoundError(repo_full_name)
             elif response.status_code == 401:
                 raise AuthenticationError()
-                
+
             response.raise_for_status()
             files = response.json()
 
@@ -358,15 +386,19 @@ class V2RayServerFinder:
                                 "size": file["size"],
                             }
                         )
-            
+
             logger.info(f"Found {len(config_files)} config files in {repo_full_name}")
             return Ok(config_files)
-            
+
         except (RateLimitError, AuthenticationError, RepositoryNotFoundError) as e:
             logger.error(str(e))
             return Err(e)
         except requests.exceptions.Timeout as e:
-            error = TimeoutError(f"Request timed out while fetching files from {repo_full_name}", url=url, timeout=10.0)
+            error = TimeoutError(
+                f"Request timed out while fetching files from {repo_full_name}",
+                url=url,
+                timeout=10.0,
+            )
             logger.error(str(error))
             return Err(error)
         except requests.exceptions.ConnectionError as e:
@@ -378,13 +410,17 @@ class V2RayServerFinder:
             logger.error(str(error))
             return Err(error)
         except Exception as e:
-            error = V2RayFinderError(f"Unexpected error while fetching files: {e}", ErrorType.UNKNOWN_ERROR)
+            error = V2RayFinderError(
+                f"Unexpected error while fetching files: {e}", ErrorType.UNKNOWN_ERROR
+            )
             logger.error(str(error), exc_info=True)
             return Err(error)
 
-    def get_repo_files_or_empty(self, repo_full_name: str, path: str = "") -> List[Dict]:
+    def get_repo_files_or_empty(
+        self, repo_full_name: str, path: str = ""
+    ) -> List[Dict]:
         """Legacy wrapper for backward compatibility. Returns empty list on error.
-        
+
         Use get_repo_files() directly for explicit error handling.
         """
         result = self.get_repo_files(repo_full_name, path)
@@ -432,13 +468,15 @@ class V2RayServerFinder:
         try:
             response = requests.get(url, timeout=timeout)
             response.raise_for_status()
-            
+
             servers = self._parse_servers(response.text)
             logger.info(f"Fetched {len(servers)} servers from {url}")
             return Ok(servers)
-            
+
         except requests.exceptions.Timeout as e:
-            error = TimeoutError(f"Request timed out while fetching from {url}", url=url, timeout=timeout)
+            error = TimeoutError(
+                f"Request timed out while fetching from {url}", url=url, timeout=timeout
+            )
             logger.error(str(error))
             return Err(error)
         except requests.exceptions.ConnectionError as e:
@@ -454,9 +492,11 @@ class V2RayServerFinder:
             logger.error(str(error), exc_info=True)
             return Err(error)
 
-    def get_servers_from_url_or_empty(self, url: str, timeout: float = 10.0) -> List[str]:
+    def get_servers_from_url_or_empty(
+        self, url: str, timeout: float = 10.0
+    ) -> List[str]:
         """Legacy wrapper for backward compatibility. Returns empty list on error.
-        
+
         Use get_servers_from_url() directly for explicit error handling.
         """
         result = self.get_servers_from_url(url, timeout)
@@ -479,7 +519,7 @@ class V2RayServerFinder:
 
         Returns:
             Deduplicated list of server configs
-            
+
         Note:
             This method uses legacy error handling (returns empty on error) for backward compatibility.
             Check get_rate_limit_info() after calling to see if rate limits were hit.
@@ -494,30 +534,30 @@ class V2RayServerFinder:
             repos_result = self.search_repos(
                 keywords=[keyword, "v2ray"], max_results=max_repos
             )
-            
+
             if repos_result.is_err():
                 errors.append(repos_result.error)
                 if self.raise_errors:
                     raise repos_result.error
                 continue
-                
+
             repos = repos_result.unwrap()
 
             for repo in repos[:max_repos]:
                 files_result = self.get_repo_files(repo["full_name"])
-                
+
                 if files_result.is_err():
                     errors.append(files_result.error)
                     if self.raise_errors:
                         raise files_result.error
                     continue
-                    
+
                 files = files_result.unwrap()
-                
+
                 for file in files:
                     if file["download_url"]:
                         servers_result = self.get_servers_from_url(file["download_url"])
-                        
+
                         if servers_result.is_ok():
                             all_servers.extend(servers_result.unwrap())
                         else:
@@ -538,7 +578,7 @@ class V2RayServerFinder:
 
         Returns:
             Deduplicated list of server configs from known sources
-            
+
         Note:
             This method uses legacy error handling for backward compatibility.
         """
@@ -547,7 +587,7 @@ class V2RayServerFinder:
 
         for url in self.DIRECT_SOURCES:
             result = self.get_servers_from_url(url)
-            
+
             if result.is_ok():
                 all_servers.extend(result.unwrap())
             else:
@@ -556,7 +596,9 @@ class V2RayServerFinder:
                     raise result.error
 
         if errors:
-            logger.warning(f"Failed to fetch from {len(errors)}/{len(self.DIRECT_SOURCES)} sources")
+            logger.warning(
+                f"Failed to fetch from {len(errors)}/{len(self.DIRECT_SOURCES)} sources"
+            )
 
         return list(dict.fromkeys(all_servers))
 
@@ -635,54 +677,66 @@ class V2RayServerFinder:
             List of server dictionaries with health information
         """
         servers = self.get_all_servers(use_github_search=use_github_search)
-        
+
         if not check_health:
             # Return without health info
             return [
                 {
                     "config": server,
-                    "protocol": server.split("://")[0] if "://" in server else "unknown",
+                    "protocol": (
+                        server.split("://")[0] if "://" in server else "unknown"
+                    ),
                     "health_checked": False,
                 }
                 for server in servers
             ]
-        
+
         # Import health checker only when needed
         try:
-            from .health_checker import HealthChecker, filter_healthy_servers, sort_by_quality
+            from .health_checker import (
+                HealthChecker,
+                filter_healthy_servers,
+                sort_by_quality,
+            )
         except ImportError:
-            logger.warning("Health checker not available, returning servers without health info")
+            logger.warning(
+                "Health checker not available, returning servers without health info"
+            )
             return [
                 {
                     "config": server,
-                    "protocol": server.split("://")[0] if "://" in server else "unknown",
+                    "protocol": (
+                        server.split("://")[0] if "://" in server else "unknown"
+                    ),
                     "health_checked": False,
                 }
                 for server in servers
             ]
-        
+
         # Prepare server list for health checking
         server_tuples = [
             (server, server.split("://")[0] if "://" in server else "unknown")
             for server in servers
         ]
-        
+
         # Perform health checks
         logger.info(f"Checking health of {len(server_tuples)} servers...")
-        checker = HealthChecker(timeout=health_timeout, concurrent_limit=concurrent_checks)
+        checker = HealthChecker(
+            timeout=health_timeout, concurrent_limit=concurrent_checks
+        )
         health_results = checker.check_servers(server_tuples)
-        
+
         # Filter if requested
         if filter_unhealthy or min_quality_score > 0:
             health_results = filter_healthy_servers(
                 health_results,
                 min_quality_score=min_quality_score,
-                exclude_unreachable=filter_unhealthy
+                exclude_unreachable=filter_unhealthy,
             )
-        
+
         # Sort by quality
         health_results = sort_by_quality(health_results, descending=True)
-        
+
         # Convert to dict format
         result_list = []
         for health in health_results:
@@ -700,7 +754,7 @@ class V2RayServerFinder:
                     "validation_error": health.validation_error,
                 }
             )
-        
+
         return result_list
 
     def save_to_file(

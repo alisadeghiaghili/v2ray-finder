@@ -1,12 +1,12 @@
 """Command-line interface for v2ray-finder."""
 
 import argparse
-import sys
 import os
+import sys
 from typing import Optional
 
 from .core import V2RayServerFinder
-from .exceptions import RateLimitError, AuthenticationError
+from .exceptions import AuthenticationError, RateLimitError
 
 
 def print_stats(servers):
@@ -52,7 +52,9 @@ def interactive_menu(finder: V2RayServerFinder):
             print_stats(servers)
             rate_info = finder.get_rate_limit_info()
             if rate_info:
-                print(f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}")
+                print(
+                    f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
+                )
         elif choice == "3":
             filename = input("Enter filename (default: v2ray_servers.txt): ").strip()
             if not filename:
@@ -77,12 +79,15 @@ def interactive_menu(finder: V2RayServerFinder):
                 print(f"\nGitHub API Rate Limit:")
                 print(f"  Limit: {rate_info['limit']}")
                 print(f"  Remaining: {rate_info['remaining']}")
-                if rate_info['reset']:
+                if rate_info["reset"]:
                     from datetime import datetime
-                    reset_time = datetime.fromtimestamp(rate_info['reset'])
+
+                    reset_time = datetime.fromtimestamp(rate_info["reset"])
                     print(f"  Resets at: {reset_time}")
             else:
-                print("\nNo rate limit info available yet. Make a GitHub API call first.")
+                print(
+                    "\nNo rate limit info available yet. Make a GitHub API call first."
+                )
         else:
             print("Invalid option. Please try again.")
 
@@ -91,16 +96,14 @@ def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Fetch and aggregate V2Ray server configs from GitHub",
-        epilog="For security, use GITHUB_TOKEN environment variable instead of -t flag."
+        epilog="For security, use GITHUB_TOKEN environment variable instead of -t flag.",
     )
     parser.add_argument(
         "-t",
         "--token",
         help="GitHub token (DEPRECATED: use GITHUB_TOKEN env var instead)",
     )
-    parser.add_argument(
-        "-o", "--output", help="Output filename for saving servers"
-    )
+    parser.add_argument("-o", "--output", help="Output filename for saving servers")
     parser.add_argument(
         "-s",
         "--search",
@@ -113,9 +116,7 @@ def main():
     parser.add_argument(
         "--stats-only", action="store_true", help="Only show statistics"
     )
-    parser.add_argument(
-        "-q", "--quiet", action="store_true", help="Minimal output"
-    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output")
 
     args = parser.parse_args()
 
@@ -125,11 +126,11 @@ def main():
             "WARNING: Passing tokens via command line is insecure!\n"
             "         Token may appear in shell history and process listings.\n"
             f"         Use environment variable instead: export GITHUB_TOKEN='your_token'\n",
-            file=sys.stderr
+            file=sys.stderr,
         )
-    
+
     # Check if GITHUB_TOKEN env var is set
-    token_from_env = os.environ.get('GITHUB_TOKEN')
+    token_from_env = os.environ.get("GITHUB_TOKEN")
     if not args.token and token_from_env and not args.quiet:
         print("Using GitHub token from GITHUB_TOKEN environment variable")
 
@@ -152,7 +153,9 @@ def main():
             print_stats(servers)
             rate_info = finder.get_rate_limit_info()
             if rate_info and args.search:
-                print(f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}")
+                print(
+                    f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
+                )
         elif args.output:
             count, filename = finder.save_to_file(
                 filename=args.output,
@@ -161,18 +164,23 @@ def main():
             )
             if not args.quiet:
                 print(f"Saved {count} servers to {filename}")
-            
+
             rate_info = finder.get_rate_limit_info()
             if rate_info and args.search and not args.quiet:
-                print(f"API calls remaining: {rate_info['remaining']}/{rate_info['limit']}")
+                print(
+                    f"API calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
+                )
 
     except RateLimitError as e:
         print(f"\nError: GitHub API rate limit exceeded!", file=sys.stderr)
         print(f"Limit: {e.details.get('limit', 'unknown')}", file=sys.stderr)
         print(f"Remaining: {e.details.get('remaining', 0)}", file=sys.stderr)
-        if 'reset_at' in e.details:
+        if "reset_at" in e.details:
             print(f"Resets at: {e.details['reset_at']}", file=sys.stderr)
-        print(f"\nConsider using a GitHub token for higher limits (5000/hour vs 60/hour)", file=sys.stderr)
+        print(
+            f"\nConsider using a GitHub token for higher limits (5000/hour vs 60/hour)",
+            file=sys.stderr,
+        )
         sys.exit(1)
     except AuthenticationError as e:
         print(f"\nError: {e}", file=sys.stderr)

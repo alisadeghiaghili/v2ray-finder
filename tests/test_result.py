@@ -1,7 +1,8 @@
 """Tests for Result type."""
 
 import pytest
-from v2ray_finder.result import Ok, Err, Result
+
+from v2ray_finder.result import Err, Ok, Result
 
 
 def test_ok_creation():
@@ -80,15 +81,16 @@ def test_err_map_err():
 
 def test_result_type_annotation():
     """Test that Result can be used in type annotations."""
+
     def divide(a: int, b: int) -> Result[float, str]:
         if b == 0:
             return Err("Division by zero")
         return Ok(a / b)
-    
+
     result1 = divide(10, 2)
     assert result1.is_ok()
     assert result1.unwrap() == 5.0
-    
+
     result2 = divide(10, 0)
     assert result2.is_err()
     assert result2.error == "Division by zero"

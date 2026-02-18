@@ -1,10 +1,11 @@
 """Basic tests for health checker without network calls."""
 
 import pytest
+
 from v2ray_finder.health_checker import (
-    ServerValidator,
-    ServerHealth,
     HealthStatus,
+    ServerHealth,
+    ServerValidator,
     filter_healthy_servers,
     sort_by_quality,
 )
@@ -136,5 +137,5 @@ class TestFilterAndSort:
         assert sorted_results[-1].latency_ms == 200.0
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
