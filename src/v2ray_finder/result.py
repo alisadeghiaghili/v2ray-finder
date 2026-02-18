@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 T = TypeVar('T')
 E = TypeVar('E')
+U = TypeVar('U')
+F = TypeVar('F')
 
 
 @dataclass
@@ -27,10 +29,10 @@ class Ok(Generic[T]):
     def unwrap_or(self, default: T) -> T:
         return self.value
     
-    def map(self, func: Callable[[T], 'U']) -> 'Result[U, E]':
+    def map(self, func: Callable[[T], U]) -> 'Result[U, E]':
         return Ok(func(self.value))
     
-    def map_err(self, func: Callable[[E], 'F']) -> 'Result[T, F]':
+    def map_err(self, func: Callable[[E], F]) -> 'Result[T, F]':
         return Ok(self.value)
 
 
@@ -51,10 +53,10 @@ class Err(Generic[E]):
     def unwrap_or(self, default: T) -> T:
         return default
     
-    def map(self, func: Callable[[T], 'U']) -> 'Result[U, E]':
+    def map(self, func: Callable[[T], U]) -> 'Result[U, E]':
         return Err(self.error)
     
-    def map_err(self, func: Callable[[E], 'F']) -> 'Result[T, F]':
+    def map_err(self, func: Callable[[E], F]) -> 'Result[T, F]':
         return Err(func(self.error))
 
 
