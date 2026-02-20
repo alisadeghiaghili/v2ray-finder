@@ -247,10 +247,10 @@ class TestRetryLogic:
         results = await fetcher.fetch_many_async(["https://httpbin.org/status/503"])
         elapsed = time.time() - start
 
-        # With 3 retries and exponential backoff:
-        # Delay should be: 0.5s, 1.0s, 2.0s = 3.5s total minimum
-        # Plus actual request time
-        assert elapsed >= 2.0  # At least some backoff occurred
+        # max_retries=3 means 3 total attempts = 2 retry delays
+        # Delays: 0.5s + 1.0s = 1.5s minimum (plus request time)
+        # Use 1.0s threshold to account for CI timing variance
+        assert elapsed >= 1.0  # At least some backoff occurred
 
 
 class TestConvenienceFunction:

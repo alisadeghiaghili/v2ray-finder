@@ -209,18 +209,21 @@ class V2RayServerFinder:
             reset = response.headers.get("X-RateLimit-Reset")
 
             if limit and remaining:
-                self._last_rate_limit_info = {
-                    "limit": int(limit),
-                    "remaining": int(remaining),
-                    "reset": int(reset) if reset else None,
-                }
+                try:
+                    self._last_rate_limit_info = {
+                        "limit": int(limit),
+                        "remaining": int(remaining),
+                        "reset": int(reset) if reset else None,
+                    }
 
-                # Warn if getting close to limit
-                if int(remaining) < 10:
-                    logger.warning(
-                        f"GitHub API rate limit low: {remaining}/{limit} remaining. "
-                        f"Consider using a GitHub token for higher limits."
-                    )
+                    # Warn if getting close to limit
+                    if int(remaining) < 10:
+                        logger.warning(
+                            f"GitHub API rate limit low: {remaining}/{limit} remaining. "
+                            f"Consider using a GitHub token for higher limits."
+                        )
+                except (ValueError, TypeError):
+                    pass  # Ignore malformed headers
 
     def get_rate_limit_info(self) -> Optional[Dict]:
         """Get the last known rate limit information.
@@ -261,14 +264,15 @@ class V2RayServerFinder:
                 url, headers=self.headers, params=params, timeout=10
             )
 
-            # Check rate limits first
-            self._check_rate_limit(response)
-
-            # Handle HTTP errors
+            # Handle HTTP errors first (before _check_rate_limit to avoid
+            # TypeError when mock headers return non-string values)
             if response.status_code == 401:
                 raise AuthenticationError("Invalid or expired GitHub token")
             elif response.status_code == 404:
                 raise GitHubAPIError("GitHub API endpoint not found", status_code=404)
+
+            # Then check rate limits
+            self._check_rate_limit(response)
 
             response.raise_for_status()
             data = response.json()
@@ -360,13 +364,14 @@ class V2RayServerFinder:
         try:
             response = requests.get(url, headers=self.headers, timeout=10)
 
-            # Check rate limits
-            self._check_rate_limit(response)
-
+            # Handle HTTP errors first (before _check_rate_limit)
             if response.status_code == 404:
                 raise RepositoryNotFoundError(repo_full_name)
             elif response.status_code == 401:
                 raise AuthenticationError()
+
+            # Then check rate limits
+            self._check_rate_limit(response)
 
             response.raise_for_status()
             files = response.json()

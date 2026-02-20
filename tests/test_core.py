@@ -24,8 +24,10 @@ def test_init_without_token(finder):
 
 def test_init_with_token():
     """Test initialization with GitHub token."""
-    finder = V2RayServerFinder(token="test_token_123")
-    assert finder.headers["Authorization"] == "token test_token_123"
+    # Token must be >= 20 chars and alphanumeric to pass validation
+    valid_token = "ghp_" + "a" * 36  # 40 chars, known prefix, passes all checks
+    finder = V2RayServerFinder(token=valid_token)
+    assert finder.headers["Authorization"] == f"token {valid_token}"
 
 
 def test_parse_servers():
