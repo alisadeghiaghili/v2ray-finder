@@ -87,6 +87,12 @@ python_functions = "test_*"
 addopts = "-v --cov=v2ray_finder --cov-report=html --cov-report=term-missing"
 asyncio_mode = "auto"
 
+[tool.coverage.run]
+omit = [
+    "*/gui/*",
+    "src/v2ray_finder/gui/*",
+]
+
 [tool.isort]
 profile = "black"
 line_length = 88
