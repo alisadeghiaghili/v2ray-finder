@@ -24,9 +24,7 @@ def print_welcome():
 **Fetch V2Ray servers from GitHub and curated sources**
     """
     console.print(Markdown(welcome))
-    console.print(
-        Panel("❤️ for freedom", style="bold cyan", box=box.ROUNDED)
-    )
+    console.print(Panel("❤️ for freedom", style="bold cyan", box=box.ROUNDED))
 
 
 def fetch_servers(finder, use_search=False, verbose=True):
@@ -88,7 +86,7 @@ def show_stats(servers):
         protocol = server.split("://")[0] if "://" in server else "unknown"
         protocols[protocol] = protocols.get(protocol, 0) + 1
 
-    # Create table — trailing comma locks black into expanded format
+    # Magic trailing comma forces black to always keep expanded form
     table = Table(
         title=f"\U0001f4ca Statistics ({len(servers)} total servers)",
         box=box.ROUNDED,
@@ -224,9 +222,7 @@ Examples:
                 f" servers to **[bold cyan]{args.output}**[/bold cyan]"
             )
         except Exception as e:
-            console.print(
-                f"\n[red]\u2717[/red] Failed to save: [bold]{str(e)}[/bold]"
-            )
+            console.print(f"\n[red]\u2717[/red] Failed to save: [bold]{str(e)}[/bold]")
             sys.exit(1)
 
 
