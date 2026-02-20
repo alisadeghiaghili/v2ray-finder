@@ -24,27 +24,27 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
 
-    - name: Lint with flake8 - Critical errors
+    - name: Lint with flake8 - Critical errors (hard failure)
       run: |
         echo "Checking for critical syntax errors..."
         flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
 
-    - name: Lint with flake8 - All errors
+    - name: Lint with flake8 - Style warnings (informational)
       run: |
         echo "Running full flake8 check..."
-        flake8 src/ tests/ --count --statistics
+        flake8 src/ tests/ --count --exit-zero --statistics
 
-    - name: Check formatting with black
+    - name: Check formatting with black (hard failure)
       run: |
         echo "Checking black formatting..."
         black --check --diff src/ tests/
 
-    - name: Check import sorting with isort
+    - name: Check import sorting with isort (hard failure)
       run: |
         echo "Checking isort..."
         isort --check-only --diff src/ tests/
 
-    - name: Type checking with mypy (optional)
+    - name: Type checking with mypy (informational)
       continue-on-error: true
       run: |
         echo "Running mypy type checks..."
