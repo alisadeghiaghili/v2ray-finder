@@ -14,7 +14,6 @@ from v2ray_finder.cli_rich import (
     show_stats,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -111,7 +110,7 @@ def test_save_servers_with_limit(mock_console, mock_progress, tmp_path):
             mock_prompt.ask.return_value = out_file
             mock_int.ask.return_value = 1  # save only 1
             save_servers(["vmess://s1", "vless://s2", "trojan://s3"])
-    lines = [l for l in open(out_file).read().splitlines() if l]
+    lines = [ln for ln in open(out_file).read().splitlines() if ln]
     assert len(lines) == 1
 
 
@@ -204,9 +203,7 @@ def test_main_no_args_enters_interactive(mock_console):
     """main() without flags goes into interactive_mode."""
     with patch("sys.argv", ["v2ray-finder-rich"]):
         mock_finder = Mock()
-        with patch(
-            "v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder
-        ):
+        with patch("v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder):
             with patch("v2ray_finder.cli_rich.interactive_mode") as mock_ia:
                 main()
         mock_ia.assert_called_once_with(mock_finder)
@@ -232,9 +229,7 @@ def test_main_stats_only_flag(mock_console, mock_progress):
     """main() with --stats-only calls show_stats."""
     with patch("sys.argv", ["v2ray-finder-rich", "--stats-only"]):
         mock_finder = Mock()
-        with patch(
-            "v2ray_finder.cli_rich.fetch_servers", return_value=["vmess://s1"]
-        ):
+        with patch("v2ray_finder.cli_rich.fetch_servers", return_value=["vmess://s1"]):
             with patch("v2ray_finder.cli_rich.show_stats") as mock_stats:
                 with patch(
                     "v2ray_finder.cli_rich.V2RayServerFinder",
@@ -268,5 +263,5 @@ def test_main_limit_flag_slices_servers(mock_console, mock_progress, tmp_path):
                 "v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder
             ):
                 main()
-    saved = [l for l in open(out_file).read().splitlines() if l]
+    saved = [ln for ln in open(out_file).read().splitlines() if ln]
     assert len(saved) == 2

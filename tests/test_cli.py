@@ -8,7 +8,6 @@ import pytest
 from v2ray_finder.cli import interactive_menu, main, print_stats
 from v2ray_finder.exceptions import AuthenticationError, RateLimitError
 
-
 # ---------------------------------------------------------------------------
 # print_stats
 # ---------------------------------------------------------------------------
@@ -43,7 +42,7 @@ def test_print_stats_unknown_protocol(capsys):
 
 
 # ---------------------------------------------------------------------------
-# main() — interactive mode (no action flags)
+# main() -- interactive mode (no action flags)
 # ---------------------------------------------------------------------------
 
 
@@ -58,7 +57,7 @@ def test_main_enters_interactive_mode():
 
 
 # ---------------------------------------------------------------------------
-# main() — non-interactive: --stats-only
+# main() -- non-interactive: --stats-only
 # ---------------------------------------------------------------------------
 
 
@@ -88,7 +87,7 @@ def test_main_stats_with_search_shows_rate_info(capsys):
 
 
 # ---------------------------------------------------------------------------
-# main() — non-interactive: -o (output file)
+# main() -- non-interactive: -o (output file)
 # ---------------------------------------------------------------------------
 
 
@@ -120,7 +119,7 @@ def test_main_output_with_search_shows_rate_info(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------
-# main() — flags: --quiet, -t (token warning), GITHUB_TOKEN env
+# main() -- flags: --quiet, -t (token warning), GITHUB_TOKEN env
 # ---------------------------------------------------------------------------
 
 
@@ -163,11 +162,11 @@ def test_main_env_token_prints_info(capsys):
 
 
 # ---------------------------------------------------------------------------
-# main() — error handling
+# main() -- error handling
 # ---------------------------------------------------------------------------
 
 
-def test_main_rate_limit_error_exits_1(capsys):
+def test_main_rate_limit_error_exits_1():
     """RateLimitError causes sys.exit(1)."""
     with patch("sys.argv", ["v2ray-finder", "--stats-only"]):
         mock_finder = Mock()
