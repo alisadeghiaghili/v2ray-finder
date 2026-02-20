@@ -25,7 +25,7 @@ def print_welcome():
     """
     console.print(Markdown(welcome))
     console.print(
-        Panel("Built with ❤️ for freedom", style="bold cyan", box=box.ROUNDED)
+        Panel("❤️ for freedom", style="bold cyan", box=box.ROUNDED)
     )
 
 
@@ -58,7 +58,7 @@ def fetch_servers(finder, use_search=False, verbose=True):
 
             if verbose:
                 console.print(
-                    f"\n[green]✓[/green] Found **[bold]{len(servers)}**[/bold] unique servers"
+                    f"\n[green]\u2713[/green] Found **[bold]{len(servers)}**[/bold] unique servers"
                 )
 
                 # Preview first 3
@@ -72,7 +72,7 @@ def fetch_servers(finder, use_search=False, verbose=True):
 
         except Exception as e:
             progress.remove_task(task)
-            console.print(f"\n[red]✗[/red] Error: [bold]{str(e)}[/bold]")
+            console.print(f"\n[red]\u2717[/red] Error: [bold]{str(e)}[/bold]")
             return []
 
 
@@ -88,9 +88,10 @@ def show_stats(servers):
         protocol = server.split("://")[0] if "://" in server else "unknown"
         protocols[protocol] = protocols.get(protocol, 0) + 1
 
-    # Create table
+    # Create table — trailing comma locks black into expanded format
     table = Table(
-        title=f"📊 Statistics ({len(servers)} total servers)", box=box.ROUNDED
+        title=f"\U0001f4ca Statistics ({len(servers)} total servers)",
+        box=box.ROUNDED,
     )
     table.add_column("Protocol", style="cyan", no_wrap=True)
     table.add_column("Count", justify="right", style="green bold")
@@ -110,8 +111,8 @@ def save_servers(servers):
         console.print("[yellow]! No servers loaded[/yellow]")
         return
 
-    filename = Prompt.ask("📁 Filename", default="v2ray_servers.txt")
-    limit = IntPrompt.ask("🔢 Limit (0 = all)", default=0)
+    filename = Prompt.ask("\U0001f4c1 Filename", default="v2ray_servers.txt")
+    limit = IntPrompt.ask("\U0001f522 Limit (0 = all)", default=0)
 
     servers_to_save = servers[:limit] if limit > 0 else servers
 
@@ -130,10 +131,11 @@ def save_servers(servers):
 
             progress.update(task, completed=len(servers_to_save))
             console.print(
-                f"\n[green]✓[/green] Saved **[bold]{len(servers_to_save)}**[/bold] servers to **[bold cyan]{filename}**[/bold cyan]"
+                f"\n[green]\u2713[/green] Saved **[bold]{len(servers_to_save)}**[/bold]"
+                f" servers to **[bold cyan]{filename}**[/bold cyan]"
             )
         except Exception as e:
-            console.print(f"\n[red]✗[/red] Save failed: [bold]{str(e)}[/bold]")
+            console.print(f"\n[red]\u2717[/red] Save failed: [bold]{str(e)}[/bold]")
 
 
 def interactive_mode(finder):
@@ -159,7 +161,7 @@ def interactive_mode(finder):
         elif choice == "4":
             save_servers(getattr(finder, "_cached_servers", []))
         elif choice == "5":
-            console.print("\n[bold cyan]👋 Goodbye![/bold cyan]")
+            console.print("\n[bold cyan]\U0001f44b Goodbye![/bold cyan]")
             break
 
 
@@ -218,10 +220,13 @@ Examples:
                 for server in servers:
                     f.write(f"{server}\n")
             console.print(
-                f"\n[green]✓[/green] Saved **[bold]{len(servers)}**[/bold] servers to **[bold cyan]{args.output}**[/bold cyan]"
+                f"\n[green]\u2713[/green] Saved **[bold]{len(servers)}**[/bold]"
+                f" servers to **[bold cyan]{args.output}**[/bold cyan]"
             )
         except Exception as e:
-            console.print(f"\n[red]✗[/red] Failed to save: [bold]{str(e)}[/bold]")
+            console.print(
+                f"\n[red]\u2717[/red] Failed to save: [bold]{str(e)}[/bold]"
+            )
             sys.exit(1)
 
 
