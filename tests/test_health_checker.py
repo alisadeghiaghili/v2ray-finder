@@ -22,9 +22,7 @@ from v2ray_finder.health_checker import (
 
 
 def test_is_healthy_true():
-    h = ServerHealth(
-        config="vmess://x", protocol="vmess", status=HealthStatus.HEALTHY
-    )
+    h = ServerHealth(config="vmess://x", protocol="vmess", status=HealthStatus.HEALTHY)
     assert h.is_healthy is True
 
 
@@ -194,7 +192,9 @@ def test_extract_ss_invalid_returns_none():
 
 
 def test_validate_vmess_valid():
-    is_valid, err, host, port = ServerValidator.validate_config(_make_vmess("h.com", 443))
+    is_valid, err, host, port = ServerValidator.validate_config(
+        _make_vmess("h.com", 443)
+    )
     assert is_valid is True
     assert host == "h.com"
 
@@ -264,9 +264,7 @@ async def test_tcp_success():
     mock_writer.close = Mock()
     mock_writer.wait_closed = AsyncMock()
 
-    with patch(
-        "asyncio.wait_for", new_callable=AsyncMock
-    ) as mock_wait:
+    with patch("asyncio.wait_for", new_callable=AsyncMock) as mock_wait:
         mock_wait.return_value = (AsyncMock(), mock_writer)
         ok, lat, err = await checker.check_tcp_connectivity("example.com", 443)
 
@@ -381,7 +379,6 @@ async def test_check_servers_batch_exception_filtered():
 
     with patch.object(checker, "check_server_health", side_effect=raise_error):
         results = await checker.check_servers_batch([("x", "y")])
-    # Exception is logged and filtered
     assert results == []
 
 
