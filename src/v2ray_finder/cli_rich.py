@@ -89,7 +89,9 @@ def show_stats(servers):
         protocols[protocol] = protocols.get(protocol, 0) + 1
 
     # Create table
-    table = Table(title=f"📊 Statistics ({len(servers)} total servers)", box=box.ROUNDED)
+    table = Table(
+        title=f"📊 Statistics ({len(servers)} total servers)", box=box.ROUNDED
+    )
     table.add_column("Protocol", style="cyan", no_wrap=True)
     table.add_column("Count", justify="right", style="green bold")
     table.add_column("Percent", justify="right", style="magenta")
