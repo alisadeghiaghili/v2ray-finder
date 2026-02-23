@@ -9,12 +9,72 @@ import pytest
 
 from v2ray_finder.cache import (
     DISKCACHE_AVAILABLE,
+    CacheBackend,
     CacheManager,
     CacheStats,
     DiskCache,
     MemoryCache,
     get_cache,
 )
+
+
+class TestCacheBackend:
+    """Test CacheBackend abstract base class contract."""
+
+    def test_cannot_instantiate_directly(self):
+        """CacheBackend is abstract and cannot be instantiated directly."""
+        with pytest.raises(TypeError):
+            CacheBackend()  # type: ignore[abstract]
+
+    def test_partial_subclass_raises_on_instantiation(self):
+        """Subclass missing abstract methods raises TypeError at instantiation."""
+
+        class IncompleteBackend(CacheBackend):
+            def get(self, key):
+                return None
+
+            # set, delete, clear intentionally omitted
+
+        with pytest.raises(TypeError):
+            IncompleteBackend()
+
+    def test_complete_subclass_is_instantiable(self):
+        """Subclass implementing all abstract methods can be instantiated."""
+
+        class MinimalBackend(CacheBackend):
+            def get(self, key):
+                return None
+
+            def set(self, key, value, ttl=None):
+                return True
+
+            def delete(self, key):
+                return True
+
+            def clear(self):
+                return True
+
+        backend = MinimalBackend()
+        assert backend is not None
+
+    def test_close_has_default_implementation(self):
+        """close() need not be overridden; the base default is a no-op."""
+
+        class MinimalBackend(CacheBackend):
+            def get(self, key):
+                return None
+
+            def set(self, key, value, ttl=None):
+                return True
+
+            def delete(self, key):
+                return True
+
+            def clear(self):
+                return True
+
+        backend = MinimalBackend()
+        backend.close()  # must not raise
 
 
 class TestCacheStats:

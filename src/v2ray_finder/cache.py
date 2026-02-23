@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, Optional
 
@@ -42,28 +43,32 @@ class CacheStats:
         }
 
 
-class CacheBackend:
-    """Base class for cache backends."""
+class CacheBackend(ABC):
+    """Abstract base class for cache backends.
 
+    Subclasses must implement get, set, delete, and clear.
+    The close() method has a default no-op implementation and may be
+    optionally overridden when the backend holds resources (e.g. file handles).
+    """
+
+    @abstractmethod
     def get(self, key: str) -> Optional[Any]:
         """Get value from cache."""
-        raise NotImplementedError
 
+    @abstractmethod
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Set value in cache with optional TTL."""
-        raise NotImplementedError
 
+    @abstractmethod
     def delete(self, key: str) -> bool:
         """Delete key from cache."""
-        raise NotImplementedError
 
+    @abstractmethod
     def clear(self) -> bool:
         """Clear entire cache."""
-        raise NotImplementedError
 
     def close(self):
-        """Close cache backend."""
-        pass
+        """Close cache backend. Override when the backend holds open resources."""
 
 
 class MemoryCache(CacheBackend):
