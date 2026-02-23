@@ -2,29 +2,51 @@
 
 import argparse
 import os
-import signal
 import sys
+import threading
 from getpass import getpass
 
 from .core import V2RayServerFinder
 from .exceptions import AuthenticationError, RateLimitError
 
 # Global state for graceful interruption
-_interrupted = False
 _partial_servers = []
 _finder_instance = None
+_stop_listener = False
 
 
-def signal_handler(signum, frame):
-    """Handle Ctrl+C gracefully."""
-    global _interrupted
-    _interrupted = True
-    print("\n\n[!] Interrupted by user. Saving partial results...")
+def keyboard_listener_thread(finder):
+    """Background thread listening for 'q' key to stop operations."""
+    global _stop_listener
+    
+    print("[i] Press 'q' + Enter at any time to stop and save partial results\n")
+    
+    while not _stop_listener:
+        try:
+            key = input().strip().lower()
+            if key == 'q':
+                print("\n[!] Stop requested - finishing current operation...")
+                finder.request_stop()
+                break
+        except (EOFError, KeyboardInterrupt):
+            # Handle Ctrl+D or Ctrl+C
+            break
 
 
-def check_interruption():
-    """Check if user requested interruption."""
-    return _interrupted
+def start_keyboard_listener(finder):
+    """Start keyboard listener in background thread."""
+    global _stop_listener
+    _stop_listener = False
+    
+    listener = threading.Thread(target=keyboard_listener_thread, args=(finder,), daemon=True)
+    listener.start()
+    return listener
+
+
+def stop_keyboard_listener():
+    """Stop keyboard listener thread."""
+    global _stop_listener
+    _stop_listener = True
 
 
 def print_stats(servers, show_health=False):
@@ -127,7 +149,7 @@ def save_partial_results(servers, filename="v2ray_servers_partial.txt"):
 
 def interactive_menu(finder: V2RayServerFinder):
     """Display interactive terminal menu."""
-    global _partial_servers, _interrupted
+    global _partial_servers
     
     while True:
         print("\n=== V2Ray Server Finder ===")
@@ -138,11 +160,10 @@ def interactive_menu(finder: V2RayServerFinder):
         print("5. Show statistics only")
         print("6. Check rate limit info")
         print("0. Exit")
-        print("\n[Tip] Press Ctrl+C during fetch to save partial results")
 
         try:
             choice = input("\nSelect option: ").strip()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             print("\n\nGoodbye!")
             break
 
@@ -151,67 +172,65 @@ def interactive_menu(finder: V2RayServerFinder):
             break
         elif choice == "1":
             print("\nFetching from known sources...")
-            print("(Press Ctrl+C to stop and save partial results)\n")
-            try:
-                _interrupted = False
-                servers = finder.get_all_servers(use_github_search=False)
-                _partial_servers = servers
-                print_stats(servers)
-            except KeyboardInterrupt:
-                if _partial_servers:
-                    save_partial_results(_partial_servers)
-                    print_stats(_partial_servers)
+            finder.reset_stop()
+            start_keyboard_listener(finder)
+            
+            servers = finder.get_all_servers(use_github_search=False)
+            _partial_servers = servers
+            
+            stop_keyboard_listener()
+            print_stats(servers)
+            
         elif choice == "2":
             print("\nFetching with GitHub search (slower)...")
-            print("(Press Ctrl+C to stop and save partial results)\n")
-            try:
-                _interrupted = False
-                servers = finder.get_all_servers(use_github_search=True)
-                _partial_servers = servers
-                print_stats(servers)
-                rate_info = finder.get_rate_limit_info()
-                if rate_info:
-                    print(
-                        f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
-                    )
-            except KeyboardInterrupt:
-                if _partial_servers:
-                    save_partial_results(_partial_servers)
-                    print_stats(_partial_servers)
+            finder.reset_stop()
+            start_keyboard_listener(finder)
+            
+            servers = finder.get_all_servers(use_github_search=True)
+            _partial_servers = servers
+            
+            stop_keyboard_listener()
+            print_stats(servers)
+            
+            rate_info = finder.get_rate_limit_info()
+            if rate_info:
+                print(
+                    f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
+                )
+                
         elif choice == "3":
             use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
             print("\nFetching and checking server health...")
             print("(This may take a minute - testing TCP connections)")
-            print("(Press Ctrl+C to stop and save partial results)\n")
-            try:
-                _interrupted = False
-                servers = finder.get_servers_with_health(
-                    use_github_search=use_search,
-                    check_health=True,
-                    health_timeout=5.0,
-                    min_quality_score=0,
-                    filter_unhealthy=False,
-                )
-                _partial_servers = servers
-                print_stats(servers, show_health=True)
+            
+            finder.reset_stop()
+            start_keyboard_listener(finder)
+            
+            servers = finder.get_servers_with_health(
+                use_github_search=use_search,
+                check_health=True,
+                health_timeout=5.0,
+                min_quality_score=0,
+                filter_unhealthy=False,
+            )
+            _partial_servers = servers
+            
+            stop_keyboard_listener()
+            print_stats(servers, show_health=True)
 
-                if servers:
-                    show_top = input("\nShow top 10 by quality? (y/n): ").strip().lower()
-                    if show_top == "y":
-                        print("\nTop 10 servers by quality:")
-                        for i, s in enumerate(servers[:10], 1):
-                            status = s.get("health_status", "unknown")
-                            quality = s.get("quality_score", 0)
-                            latency = s.get("latency_ms", 0)
-                            proto = s.get("protocol", "?")
-                            print(
-                                f"{i:2d}. [{proto:8s}] Quality: {quality:5.1f} "
-                                f"| Latency: {latency:6.1f}ms | Status: {status}"
-                            )
-            except KeyboardInterrupt:
-                if _partial_servers:
-                    save_partial_results(_partial_servers, "v2ray_servers_partial_health.txt")
-                    print_stats(_partial_servers, show_health=True)
+            if servers:
+                show_top = input("\nShow top 10 by quality? (y/n): ").strip().lower()
+                if show_top == "y":
+                    print("\nTop 10 servers by quality:")
+                    for i, s in enumerate(servers[:10], 1):
+                        status = s.get("health_status", "unknown")
+                        quality = s.get("quality_score", 0)
+                        latency = s.get("latency_ms", 0)
+                        proto = s.get("protocol", "?")
+                        print(
+                            f"{i:2d}. [{proto:8s}] Quality: {quality:5.1f} "
+                            f"| Latency: {latency:6.1f}ms | Status: {status}"
+                        )
 
         elif choice == "4":
             filename = input("Enter filename (default: v2ray_servers.txt): ").strip()
@@ -223,55 +242,59 @@ def interactive_menu(finder: V2RayServerFinder):
             limit = int(limit_str) if limit_str and limit_str != "0" else None
 
             print(f"\nSaving to {filename}...")
-            print("(Press Ctrl+C to save partial results)\n")
-            try:
-                _interrupted = False
-                if check_health:
-                    print("(Health checking enabled - this will take longer)")
-                    servers = finder.get_servers_with_health(
-                        use_github_search=use_search,
-                        check_health=True,
-                        health_timeout=5.0,
-                        min_quality_score=50.0,
-                        filter_unhealthy=True,
-                    )
-                    configs = [s["config"] for s in servers]
-                    servers = configs[:limit] if limit else configs
-                else:
-                    servers = finder.get_all_servers(use_github_search=use_search)
-                    servers = servers[:limit] if limit else servers
+            
+            finder.reset_stop()
+            start_keyboard_listener(finder)
+            
+            if check_health:
+                print("(Health checking enabled - this will take longer)")
+                servers = finder.get_servers_with_health(
+                    use_github_search=use_search,
+                    check_health=True,
+                    health_timeout=5.0,
+                    min_quality_score=50.0,
+                    filter_unhealthy=True,
+                )
+                configs = [s["config"] for s in servers]
+                servers = configs[:limit] if limit else configs
+            else:
+                servers = finder.get_all_servers(use_github_search=use_search)
+                servers = servers[:limit] if limit else servers
 
+            _partial_servers = servers
+            stop_keyboard_listener()
+            
+            if finder.should_stop():
+                save_partial_results(_partial_servers, filename)
+            else:
                 with open(filename, "w", encoding="utf-8") as f:
                     for server in servers:
                         f.write(f"{server}\n")
                 print(f"Saved {len(servers)} servers to {filename}")
-            except KeyboardInterrupt:
-                if _partial_servers:
-                    save_partial_results(_partial_servers, filename)
 
         elif choice == "5":
             use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
             check_health = input("Check server health? (y/n): ").strip().lower() == "y"
             print("\nFetching servers for statistics...")
-            print("(Press Ctrl+C to show partial stats)\n")
-            try:
-                _interrupted = False
-                if check_health:
-                    servers = finder.get_servers_with_health(
-                        use_github_search=use_search,
-                        check_health=True,
-                        health_timeout=5.0,
-                    )
-                    _partial_servers = servers
-                    print_stats(servers, show_health=True)
-                else:
-                    servers = finder.get_all_servers(use_github_search=use_search)
-                    _partial_servers = servers
-                    print_stats(servers)
-            except KeyboardInterrupt:
-                if _partial_servers:
-                    print("\n[!] Showing partial statistics:\n")
-                    print_stats(_partial_servers, show_health=check_health)
+            
+            finder.reset_stop()
+            start_keyboard_listener(finder)
+            
+            if check_health:
+                servers = finder.get_servers_with_health(
+                    use_github_search=use_search,
+                    check_health=True,
+                    health_timeout=5.0,
+                )
+                _partial_servers = servers
+                stop_keyboard_listener()
+                print_stats(servers, show_health=True)
+            else:
+                servers = finder.get_all_servers(use_github_search=use_search)
+                _partial_servers = servers
+                stop_keyboard_listener()
+                print_stats(servers)
+                
         elif choice == "6":
             rate_info = finder.get_rate_limit_info()
             if rate_info:
@@ -293,10 +316,7 @@ def interactive_menu(finder: V2RayServerFinder):
 
 def main():
     """Main CLI entry point."""
-    global _partial_servers, _finder_instance, _interrupted
-    
-    # Setup signal handler for graceful interruption
-    signal.signal(signal.SIGINT, signal_handler)
+    global _partial_servers, _finder_instance
     
     parser = argparse.ArgumentParser(
         description="Fetch and aggregate V2Ray server configs from GitHub",
@@ -383,7 +403,10 @@ def main():
             action = "GitHub search" if args.search else "known sources"
             health_note = " with health checking" if args.check_health else ""
             print(f"Fetching servers from {action}{health_note}...")
-            print("(Press Ctrl+C to save partial results and exit)\n")
+
+        # Start keyboard listener for non-interactive mode
+        finder.reset_stop()
+        listener = start_keyboard_listener(finder)
 
         if args.check_health:
             servers = finder.get_servers_with_health(
@@ -397,6 +420,18 @@ def main():
             servers = finder.get_all_servers(use_github_search=args.search)
         
         _partial_servers = servers
+        stop_keyboard_listener()
+        
+        # Check if stopped
+        if finder.should_stop():
+            print("\n[!] Operation stopped by user")
+            if _partial_servers:
+                if args.output:
+                    save_partial_results(_partial_servers, args.output)
+                else:
+                    save_partial_results(_partial_servers)
+                print_stats(_partial_servers, show_health=args.check_health)
+            sys.exit(130)  # Standard exit code for interruption
 
         if args.stats_only:
             print_stats(servers, show_health=args.check_health)
@@ -427,15 +462,6 @@ def main():
                     f"API calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
                 )
 
-    except KeyboardInterrupt:
-        print("\n\n[!] Operation interrupted by user")
-        if _partial_servers:
-            if args.output:
-                save_partial_results(_partial_servers, args.output)
-            else:
-                save_partial_results(_partial_servers)
-            print_stats(_partial_servers, show_health=args.check_health)
-        sys.exit(130)  # Standard exit code for SIGINT
     except RateLimitError as e:
         print(f"\nError: GitHub API rate limit exceeded!", file=sys.stderr)
         print(f"Limit: {e.details.get('limit', 'unknown')}", file=sys.stderr)
@@ -457,6 +483,8 @@ def main():
             print("\nAttempting to save partial results...")
             save_partial_results(_partial_servers)
         sys.exit(1)
+    finally:
+        stop_keyboard_listener()
 
 
 if __name__ == "__main__":
