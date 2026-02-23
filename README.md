@@ -120,6 +120,8 @@ finder = V2RayServerFinder.from_env() # explicit
 
 **Rate Limits:** without token: 60 req/h — with token: 5000 req/h
 
+Generate a token at **GitHub Settings → Developer settings → Personal** access tokens with **public_repo** scope.
+
 ---
 
 ## 📚 Library Usage / استفاده به‌صورت کتابخانه
