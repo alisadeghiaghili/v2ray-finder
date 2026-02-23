@@ -105,6 +105,7 @@ finder = V2RayServerFinder.from_env() # صریح
 ```
 
 **محدودیت rate:** بدون token: ۶۰/ساعت — با token: ۵۰۰۰/ساعت
+
 میتوانید توکن رو از داخل GitHub Settings → Developer settings → Personal access tokens با اسکوپ public_repo بسازید.
 
 
