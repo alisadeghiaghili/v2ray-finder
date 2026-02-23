@@ -342,24 +342,50 @@ class TestPerformance:
 
     @pytest.mark.asyncio
     async def test_parallel_faster_than_serial(self):
-        """Test that parallel fetching is faster than serial."""
+        """Test that parallel fetching is faster than serial.
+
+        Uses mocked async sleeps instead of live network calls to make
+        the test deterministic across all CI platforms (Windows, macOS,
+        Linux) regardless of network latency or httpbin availability.
+        """
         if not AIOHTTP_AVAILABLE and not HTTPX_AVAILABLE:
             pytest.skip("No async HTTP library available")
 
         import time
 
-        urls = [f"https://httpbin.org/delay/1" for _ in range(3)]
+        call_start_times: list = []
 
-        # Parallel fetch
+        async def mock_fetch_single(url, **kwargs):
+            """Simulate a 0.5s network delay per request."""
+            call_start_times.append(time.monotonic())
+            await asyncio.sleep(0.5)
+            return FetchResult(
+                url=url,
+                content="ok",
+                status_code=200,
+                success=True,
+                error=None,
+                elapsed_ms=500.0,
+            )
+
         fetcher = AsyncFetcher(max_concurrent=10, timeout=10.0)
-        start = time.time()
-        results = await fetcher.fetch_many_async(urls)
-        parallel_time = time.time() - start
 
-        # Should take roughly 1 second (all parallel)
-        # Allow some margin for network delays
-        assert parallel_time < 2.5  # Much faster than 3+ seconds serial would take
+        with patch.object(fetcher, "_fetch_single_async", side_effect=mock_fetch_single):
+            start = time.monotonic()
+            results = await fetcher.fetch_many_async(
+                ["https://mock-url-1.test", "https://mock-url-2.test", "https://mock-url-3.test"]
+            )
+            parallel_time = time.monotonic() - start
+
+        # All 3 requests run concurrently: total time ~0.5s, not ~1.5s serial.
+        # Allow up to 1.5s to accommodate event-loop/scheduling overhead on
+        # slow CI runners while still proving concurrency over a 1.5s serial baseline.
+        assert parallel_time < 1.5, (
+            f"Parallel fetch took {parallel_time:.2f}s — expected < 1.5s. "
+            f"This suggests requests are NOT running concurrently."
+        )
         assert len(results) == 3
+        assert all(r.success for r in results)
 
     def test_elapsed_time_tracking(self):
         """Test that elapsed time is tracked correctly."""
