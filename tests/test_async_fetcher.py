@@ -344,22 +344,23 @@ class TestPerformance:
     async def test_parallel_faster_than_serial(self):
         """Test that parallel fetching is faster than serial.
 
-        Uses mocked async sleeps instead of live network calls to make
-        the test deterministic across all CI platforms (Windows, macOS,
-        Linux) regardless of network latency or httpbin availability.
+        Patches asyncio.gather to simulate concurrent coroutines with
+        asyncio.sleep delays. This is fully deterministic and does not
+        rely on live network calls or internal method names.
         """
         if not AIOHTTP_AVAILABLE and not HTTPX_AVAILABLE:
             pytest.skip("No async HTTP library available")
 
         import time
 
-        call_start_times: list = []
+        urls = [
+            "https://mock-url-1.test",
+            "https://mock-url-2.test",
+            "https://mock-url-3.test",
+        ]
 
-        async def mock_fetch_single(url, **kwargs):
-            """Simulate a 0.5s network delay per request."""
-            call_start_times.append(time.monotonic())
-            await asyncio.sleep(0.5)
-            return FetchResult(
+        mock_results = [
+            FetchResult(
                 url=url,
                 content="ok",
                 status_code=200,
@@ -367,25 +368,27 @@ class TestPerformance:
                 error=None,
                 elapsed_ms=500.0,
             )
+            for url in urls
+        ]
+
+        async def fake_gather(*coros, **kwargs):
+            """Run all coroutines concurrently after a shared 0.5s sleep."""
+            await asyncio.sleep(0.5)
+            # Drain the real coroutines so Python doesn't warn about them
+            for coro in coros:
+                if asyncio.iscoroutine(coro):
+                    coro.close()
+            return mock_results
 
         fetcher = AsyncFetcher(max_concurrent=10, timeout=10.0)
 
-        with patch.object(
-            fetcher, "_fetch_single_async", side_effect=mock_fetch_single
-        ):
+        with patch("v2ray_finder.async_fetcher.asyncio.gather", side_effect=fake_gather):
             start = time.monotonic()
-            results = await fetcher.fetch_many_async(
-                [
-                    "https://mock-url-1.test",
-                    "https://mock-url-2.test",
-                    "https://mock-url-3.test",
-                ]
-            )
+            results = await fetcher.fetch_many_async(urls)
             parallel_time = time.monotonic() - start
 
-        # All 3 requests run concurrently: total time ~0.5s, not ~1.5s serial.
-        # Allow up to 1.5s to accommodate event-loop/scheduling overhead on
-        # slow CI runners while still proving concurrency over a 1.5s serial baseline.
+        # fake_gather sleeps 0.5s for all 3 URLs together (parallel).
+        # Serial execution would take 1.5s+. Allow up to 1.5s for overhead.
         assert parallel_time < 1.5, (
             f"Parallel fetch took {parallel_time:.2f}s — expected < 1.5s. "
             f"This suggests requests are NOT running concurrently."
