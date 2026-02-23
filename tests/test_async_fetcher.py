@@ -187,7 +187,7 @@ class TestAsyncFetcher:
             pytest.skip("No async HTTP library available")
 
         fetcher = AsyncFetcher(max_concurrent=2, timeout=5.0)
-        urls = [f"https://httpbin.org/delay/1" for _ in range(5)]
+        urls = ["https://httpbin.org/delay/1" for _ in range(5)]
 
         import time
 
@@ -218,6 +218,34 @@ class TestAsyncFetcher:
 
                 results = fetcher.fetch_many(["https://httpbin.org/status/200"])
                 assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_fetch_many_async_raises_without_async_lib(self):
+        """fetch_many_async() raises RuntimeError when no async lib is installed.
+
+        Callers must use fetch_many() for automatic sync fallback; calling
+        the async method directly without aiohttp or httpx is an error.
+        """
+        with patch("v2ray_finder.async_fetcher.AIOHTTP_AVAILABLE", False):
+            with patch("v2ray_finder.async_fetcher.HTTPX_AVAILABLE", False):
+                fetcher = AsyncFetcher()
+                assert fetcher.backend == "sync"
+
+                with pytest.raises(RuntimeError, match="requires aiohttp or httpx"):
+                    await fetcher.fetch_many_async(["https://example.com"])
+
+    @pytest.mark.asyncio
+    async def test_fetch_many_async_empty_list_never_raises(self):
+        """fetch_many_async([]) returns [] even with sync backend.
+
+        The empty-list guard runs before the backend check, so no
+        RuntimeError is raised when there is nothing to fetch.
+        """
+        with patch("v2ray_finder.async_fetcher.AIOHTTP_AVAILABLE", False):
+            with patch("v2ray_finder.async_fetcher.HTTPX_AVAILABLE", False):
+                fetcher = AsyncFetcher()
+                result = await fetcher.fetch_many_async([])
+                assert result == []
 
 
 class TestRetryLogic:

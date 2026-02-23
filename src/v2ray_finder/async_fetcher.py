@@ -299,6 +299,10 @@ class AsyncFetcher:
 
         Returns:
             List of FetchResult objects
+
+        Raises:
+            RuntimeError: If no async HTTP library (aiohttp or httpx) is
+                installed.  Use fetch_many() for automatic sync fallback.
         """
         if not urls:
             return []
@@ -364,9 +368,14 @@ class AsyncFetcher:
                 return processed_results
 
         else:
-            # Fallback to sync (should not happen if async method is called)
-            logger.warning("Async libraries not available, falling back to sync")
-            return []
+            # backend == "sync": no async library is installed.
+            # Raising here is intentional — callers who need a sync fallback
+            # should use fetch_many() instead, which routes to requests.
+            raise RuntimeError(
+                "fetch_many_async() requires aiohttp or httpx. "
+                "Install with: pip install 'v2ray-finder[async]'. "
+                "Use fetch_many() for automatic sync fallback."
+            )
 
     def fetch_many(
         self,
