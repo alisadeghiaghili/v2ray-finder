@@ -370,10 +370,16 @@ class TestPerformance:
 
         fetcher = AsyncFetcher(max_concurrent=10, timeout=10.0)
 
-        with patch.object(fetcher, "_fetch_single_async", side_effect=mock_fetch_single):
+        with patch.object(
+            fetcher, "_fetch_single_async", side_effect=mock_fetch_single
+        ):
             start = time.monotonic()
             results = await fetcher.fetch_many_async(
-                ["https://mock-url-1.test", "https://mock-url-2.test", "https://mock-url-3.test"]
+                [
+                    "https://mock-url-1.test",
+                    "https://mock-url-2.test",
+                    "https://mock-url-3.test",
+                ]
             )
             parallel_time = time.monotonic() - start
 
