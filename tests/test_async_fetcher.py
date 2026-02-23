@@ -382,7 +382,10 @@ class TestPerformance:
 
         fetcher = AsyncFetcher(max_concurrent=10, timeout=10.0)
 
-        with patch("v2ray_finder.async_fetcher.asyncio.gather", side_effect=fake_gather):
+        with patch(
+            "v2ray_finder.async_fetcher.asyncio.gather",
+            side_effect=fake_gather,
+        ):
             start = time.monotonic()
             results = await fetcher.fetch_many_async(urls)
             parallel_time = time.monotonic() - start
