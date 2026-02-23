@@ -33,6 +33,8 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 🧪 **78% Test Coverage** — Comprehensive test suite across Python 3.8–3.12  
 📈 **Rate Limit Tracking** — Monitor GitHub API usage  
 🏥 **Health Checking** — TCP connectivity, latency measurement, quality scoring  
+⌨️ **Interactive Token Prompt** — Secure masked input with `--prompt-token`  
+⛔ **Graceful Interruption** — Press Ctrl+C to save partial results  
 
 > See full details in [📋 CHANGELOG.md](CHANGELOG.md)
 
@@ -54,11 +56,13 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 - ✅ **Health checking**: TCP connectivity, latency measurement, config validation
 - 🎯 **Quality scoring**: Rank servers by speed and reliability
 - 🔄 **Retry logic**: Automatic retry with exponential backoff
+- ⛔ **Graceful interruption**: Ctrl+C saves partial results before exit
 
 ### Developer Experience / تجربه توسعه‌دهنده
 - 🛡️ **Robust error handling**: Detailed exception hierarchy with proper error propagation
 - 📈 **Rate limit tracking**: Monitor GitHub API usage
 - 🔒 **Secure token handling**: Environment variable support with validation
+- ⌨️ **Interactive token prompt**: Masked input for secure token entry
 - 🧪 **78% test coverage**: Comprehensive test suite across Linux, macOS, and Windows
 - ✅ **CI/CD**: Automated testing and deployment
 
@@ -106,9 +110,12 @@ pip install -e ".[all,dev]"
 
 ## 🔒 Token Security / امنیت Token
 
+### Method 1: Environment Variable (Recommended)
+
 ```bash
 # پیشنهادی / Recommended
 export GITHUB_TOKEN="ghp_your_token_here"
+v2ray-finder -s
 ```
 
 ```python
@@ -118,9 +125,61 @@ finder = V2RayServerFinder()          # reads GITHUB_TOKEN automatically
 finder = V2RayServerFinder.from_env() # explicit
 ```
 
+### Method 2: Interactive Prompt (New! ✨)
+
+```bash
+# Secure masked input
+v2ray-finder --prompt-token -s -o servers.txt
+v2ray-finder-rich --prompt-token
+
+# In interactive mode (no args), you'll be prompted automatically
+v2ray-finder-rich
+# → "Do you want to provide a GitHub token? (y/n)"
+```
+
 **Rate Limits:** without token: 60 req/h — with token: 5000 req/h
 
-Generate a token at **GitHub Settings → Developer settings → Personal** access tokens with **public_repo** scope.
+Generate a token at **GitHub Settings → Developer settings → Personal access tokens** with **public_repo** scope.
+
+> ⚠️ **Security Note:** Never use `-t` flag for tokens (insecure). Use env var or `--prompt-token` instead.
+
+---
+
+## ⛔ Graceful Interruption (New! ✨)
+
+**Press Ctrl+C at any time** during fetch operations to:
+- Stop immediately without data loss
+- Save all servers collected so far
+- Display statistics for partial results
+- Exit cleanly with code `130`
+
+```bash
+v2ray-finder -s -o servers.txt
+# ... fetching ...
+# Press Ctrl+C
+
+[!] Interrupted by user. Saving partial results...
+[✓] Saved 47 servers to v2ray_servers_partial.txt
+
+Total servers: 47
+By protocol:
+  vmess: 23
+  vless: 15
+  trojan: 9
+```
+
+**Rich CLI** version:
+
+```bash
+v2ray-finder-rich -s
+# Press Ctrl+C during fetch
+
+⚠ Interrupted by user
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+✓ Saved 47 servers to v2ray_servers_partial.txt
+```
+
+> 📖 **See detailed guide:** [docs/INTERRUPTION_GUIDE.md](docs/INTERRUPTION_GUIDE.md)
 
 ---
 
@@ -179,6 +238,8 @@ for s in servers[:10]:
 
 ## ⚡ CLI Usage / استفاده از CLI
 
+### Basic CLI
+
 ```bash
 export GITHUB_TOKEN="ghp_your_token_here"
 
@@ -186,12 +247,28 @@ v2ray-finder                          # Interactive TUI
 v2ray-finder -o servers.txt           # Quick save
 v2ray-finder -s -l 200 -o servers.txt # GitHub search + limit
 v2ray-finder --stats-only             # Stats only
+v2ray-finder --prompt-token -s        # Secure token input
 ```
+
+**With health checking:**
+
+```bash
+v2ray-finder -c --min-quality 60 -o healthy_servers.txt
+```
+
+### Rich CLI (Recommended)
 
 ```bash
 pip install "v2ray-finder[cli-rich]"
 v2ray-finder-rich                     # Beautiful Rich TUI
+v2ray-finder-rich --prompt-token      # With secure token prompt
 ```
+
+**Interactive mode features:**
+- Token prompt on first run (if not in env)
+- Press Ctrl+C during fetch → saves partial results
+- Visual progress bars and spinners
+- Color-coded health status
 
 ---
 
@@ -200,6 +277,41 @@ v2ray-finder-rich                     # Beautiful Rich TUI
 ```bash
 pip install "v2ray-finder[gui]"
 v2ray-finder-gui
+```
+
+---
+
+## 🛠️ Advanced Usage
+
+### Interruption in Scripts
+
+```bash
+#!/bin/bash
+
+v2ray-finder -s -o servers.txt
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    echo "Success!"
+    # Process servers.txt
+elif [ $exit_code -eq 130 ]; then
+    echo "Interrupted - using partial results"
+    mv v2ray_servers_partial.txt servers.txt
+else
+    echo "Error occurred"
+    exit 1
+fi
+```
+
+### CI/CD with Timeout
+
+```bash
+# Timeout after 2 minutes, use partial results
+timeout 120 v2ray-finder -s -o servers.txt || {
+    if [ $? -eq 124 ]; then
+        mv v2ray_servers_partial.txt servers.txt
+    fi
+}
 ```
 
 ---
@@ -225,6 +337,7 @@ MIT License © 2026 Ali Sadeghi Aghili
 - [PyPI](https://pypi.org/project/v2ray-finder)
 - [Issues](https://github.com/alisadeghiaghili/v2ray-finder/issues)
 - [CHANGELOG](CHANGELOG.md)
+- [Interruption Guide](docs/INTERRUPTION_GUIDE.md)
 
 ---
 
