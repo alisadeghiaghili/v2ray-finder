@@ -135,7 +135,8 @@ def interactive_menu(finder: V2RayServerFinder):
                     min_quality_score=50.0,
                     filter_unhealthy=True,
                 )
-                servers = [s["config"] for s in servers[:limit]] if limit else [s["config"] for s in servers]
+                configs = [s["config"] for s in servers]
+                servers = configs[:limit] if limit else configs
             else:
                 servers = finder.get_all_servers(use_github_search=use_search)
                 servers = servers[:limit] if limit else servers
