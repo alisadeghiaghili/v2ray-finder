@@ -30,7 +30,7 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 💾 **Smart Caching** — 80-95% fewer GitHub API calls  
 🛡️ **Enhanced Error Handling** — Result type + custom exception hierarchy  
 🔒 **Secure Token Handling** — Environment variable support + `from_env()`  
-🧪 **70%+ Test Coverage** — Comprehensive test suite across Python 3.8–3.12  
+🧪 **78% Test Coverage** — Comprehensive test suite across Python 3.8–3.12  
 📈 **Rate Limit Tracking** — Monitor GitHub API usage  
 🏥 **Health Checking** — TCP connectivity, latency measurement, quality scoring  
 
@@ -59,7 +59,7 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 - 🛡️ **Robust error handling**: Detailed exception hierarchy with proper error propagation
 - 📈 **Rate limit tracking**: Monitor GitHub API usage
 - 🔒 **Secure token handling**: Environment variable support with validation
-- 🧪 **70%+ test coverage**: Comprehensive test suite
+- 🧪 **78% test coverage**: Comprehensive test suite across Linux, macOS, and Windows
 - ✅ **CI/CD**: Automated testing and deployment
 
 ---

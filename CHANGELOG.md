@@ -4,8 +4,6 @@ All notable changes to v2ray-finder will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
-
 ## [0.2.0] - 2026-02-20
 
 ### Added
@@ -48,11 +46,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `get_rate_limit_info()` — returns last known limit, remaining, and reset time
   - Automatic warning logged when remaining requests drop below 10
 
-- **Test Suite** (70%+ coverage)
+- **Test Suite** (78% coverage)
   - Unit tests for all core modules
   - Async tests using `pytest-asyncio`
   - Health checker tests with full TCP mocking
-  - CI matrix: Python 3.8–3.12 on Linux and Windows
+  - CI matrix: Python 3.8–3.12 on Linux, macOS, and Windows
 
 ### Changed
 
@@ -98,7 +96,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 |--------|-------|
 | Source Lines | ~2,500+ |
 | Test Files | 7 |
-| Test Coverage | 70%+ |
+| Test Coverage | 78% |
 | Supported Protocols | 5 (vmess, vless, trojan, ss, ssr) |
 | Interfaces | 3 (Python API, CLI, GUI) |
 | Python Versions | 3.8 – 3.12 |
