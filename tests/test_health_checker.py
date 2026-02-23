@@ -92,6 +92,13 @@ def _make_vmess(host: str, port: int) -> str:
     return f"vmess://{encoded}"
 
 
+def _make_ssr(host: str, port: int) -> str:
+    """Build a minimal valid SSR config string."""
+    ssr_body = f"{host}:{port}:auth_sha1_v4:rc4-md5:http_simple:dGVzdA=="
+    encoded = base64.b64encode(ssr_body.encode()).decode().rstrip("=")
+    return f"ssr://{encoded}"
+
+
 def test_extract_vmess_valid():
     config = _make_vmess("example.com", 443)
     result = ServerValidator.extract_vmess_info(config)
@@ -187,6 +194,49 @@ def test_extract_ss_invalid_returns_none():
 
 
 # ---------------------------------------------------------------------------
+# ServerValidator -- extract_ssr_info
+# ---------------------------------------------------------------------------
+
+
+def test_extract_ssr_valid():
+    config = _make_ssr("example.com", 8388)
+    result = ServerValidator.extract_ssr_info(config)
+    assert result is not None
+    assert result["host"] == "example.com"
+    assert result["port"] == 8388
+    assert result["valid"] is True
+
+
+def test_extract_ssr_with_query_params():
+    """/?obfsparam&... suffix is stripped before parsing."""
+    ssr_body = "host.example.com:1234:auth_sha1_v4:rc4-md5:http_simple:dGVzdA==/?obfsparam=abc"
+    encoded = base64.b64encode(ssr_body.encode()).decode().rstrip("=")
+    result = ServerValidator.extract_ssr_info(f"ssr://{encoded}")
+    assert result is not None
+    assert result["host"] == "host.example.com"
+    assert result["port"] == 1234
+
+
+def test_extract_ssr_invalid_encoding_returns_none():
+    result = ServerValidator.extract_ssr_info("ssr://!!!notbase64!!!")
+    assert result is None
+
+
+def test_extract_ssr_no_port_field_returns_none():
+    """Decoded string with no colon (no port) -> None."""
+    encoded = base64.b64encode(b"onlyhostnoport").decode()
+    result = ServerValidator.extract_ssr_info(f"ssr://{encoded}")
+    assert result is None
+
+
+def test_extract_ssr_invalid_port_returns_none():
+    ssr_body = "example.com:notanumber:protocol:method:obfs:pass"
+    encoded = base64.b64encode(ssr_body.encode()).decode().rstrip("=")
+    result = ServerValidator.extract_ssr_info(f"ssr://{encoded}")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
 # ServerValidator -- validate_config
 # ---------------------------------------------------------------------------
 
@@ -232,10 +282,24 @@ def test_validate_ss_valid():
     assert is_valid is True
 
 
-def test_validate_ssr_always_valid():
-    is_valid, err, host, port = ServerValidator.validate_config("ssr://something")
+def test_validate_ssr_valid():
+    """Well-formed SSR config extracts real host and port."""
+    config = _make_ssr("example.com", 8388)
+    is_valid, err, host, port = ServerValidator.validate_config(config)
     assert is_valid is True
+    assert err is None
+    assert host == "example.com"
+    assert port == 8388
+
+
+def test_validate_ssr_invalid():
+    """Garbage SSR payload is rejected as INVALID, not silently accepted."""
+    garbage = base64.b64encode(b"notvalid").decode().rstrip("=")
+    is_valid, err, host, port = ServerValidator.validate_config(f"ssr://{garbage}")
+    assert is_valid is False
+    assert err == "Invalid SSR format"
     assert host is None
+    assert port is None
 
 
 def test_validate_unknown_protocol():
@@ -340,11 +404,41 @@ async def test_check_health_unreachable():
 
 
 @pytest.mark.asyncio
-async def test_check_health_ssr_no_host_port():
-    """Valid config with no host/port (SSR) -> assumed HEALTHY."""
+async def test_check_health_ssr_reachable():
+    """Valid SSR config performs a real TCP check (not auto-HEALTHY)."""
     checker = HealthChecker()
-    result = await checker.check_server_health("ssr://some_config", "ssr")
+    config = _make_ssr("example.com", 8388)
+    with patch.object(
+        checker, "check_tcp_connectivity", return_value=(True, 80.0, None)
+    ) as mock_tcp:
+        result = await checker.check_server_health(config, "ssr")
+    mock_tcp.assert_called_once_with("example.com", 8388)
     assert result.status == HealthStatus.HEALTHY
+    assert result.latency_ms == 80.0
+
+
+@pytest.mark.asyncio
+async def test_check_health_ssr_unreachable():
+    """Valid SSR config that fails TCP is UNREACHABLE, not HEALTHY."""
+    checker = HealthChecker()
+    config = _make_ssr("example.com", 8388)
+    with patch.object(
+        checker,
+        "check_tcp_connectivity",
+        return_value=(False, None, "Connection timeout"),
+    ):
+        result = await checker.check_server_health(config, "ssr")
+    assert result.status == HealthStatus.UNREACHABLE
+
+
+@pytest.mark.asyncio
+async def test_check_health_ssr_invalid_payload():
+    """Garbage SSR payload is INVALID, not auto-HEALTHY."""
+    checker = HealthChecker()
+    garbage = base64.b64encode(b"notvalid").decode().rstrip("=")
+    result = await checker.check_server_health(f"ssr://{garbage}", "ssr")
+    assert result.status == HealthStatus.INVALID
+    assert result.validation_error == "Invalid SSR format"
 
 
 # ---------------------------------------------------------------------------

@@ -153,6 +153,41 @@ class ServerValidator:
             logger.debug(f"Failed to parse ss: {e}")
             return None
 
+    @staticmethod
+    def extract_ssr_info(config: str) -> Optional[Dict]:
+        """Extract host/port from ShadowsocksR config.
+
+        SSR format: ssr://base64(host:port:protocol:method:obfs:base64(pass)[/?params])
+        """
+        try:
+            encoded = config.replace("ssr://", "").rstrip("/")
+
+            # Fix base64 padding
+            padding = 4 - len(encoded) % 4
+            if padding != 4:
+                encoded += "=" * padding
+
+            decoded = base64.b64decode(encoded).decode("utf-8", errors="replace")
+
+            # Strip optional /?obfsparam&... suffix
+            main_part = decoded.split("/?")[0].split("?")[0]
+
+            # Expected: host:port:protocol:method:obfs:base64(pass)
+            parts = main_part.split(":")
+            if len(parts) < 2:
+                return None
+
+            host = parts[0].strip()
+            port = int(parts[1].strip())
+
+            if not host or not (0 < port < 65536):
+                return None
+
+            return {"host": host, "port": port, "valid": True}
+        except Exception as e:
+            logger.debug(f"Failed to parse ssr: {e}")
+            return None
+
     @classmethod
     def validate_config(
         cls, config: str
@@ -189,8 +224,10 @@ class ServerValidator:
             return False, "Invalid shadowsocks format", None, None
 
         elif config.startswith("ssr://"):
-            # SSR is complex, skip detailed validation for now
-            return True, None, None, None
+            info = cls.extract_ssr_info(config)
+            if info and info.get("valid"):
+                return True, None, info["host"], info["port"]
+            return False, "Invalid SSR format", None, None
 
         else:
             return False, "Unknown protocol", None, None
@@ -288,11 +325,13 @@ class HealthChecker:
                     port=port,
                 )
         else:
-            # Valid config but can't check connectivity (e.g., SSR)
+            # Valid config but cannot extract connection details.
+            # Should not be reached for any currently supported protocol;
+            # kept as a safe fallback for future protocol variants.
             return ServerHealth(
                 config=config,
                 protocol=protocol,
-                status=HealthStatus.HEALTHY,  # Assume healthy if valid
+                status=HealthStatus.HEALTHY,
                 host=host,
                 port=port,
             )
