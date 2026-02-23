@@ -1,7 +1,9 @@
 """Rich CLI interface for v2ray-finder."""
 
 import argparse
+import signal
 import sys
+from getpass import getpass
 
 from rich import box
 from rich.console import Console
@@ -15,6 +17,19 @@ from .core import V2RayServerFinder
 
 console = Console()
 
+# Global state for graceful interruption
+_interrupted = False
+_partial_servers = []
+_finder_instance = None
+
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C gracefully with Rich styling."""
+    global _interrupted
+    _interrupted = True
+    console.print("\n\n[yellow]⚠ [/yellow] [bold]Interrupted by user[/bold]")
+    console.print("[dim]Saving partial results...[/dim]")
+
 
 def print_welcome():
     """Print welcome banner."""
@@ -27,8 +42,80 @@ def print_welcome():
     console.print(Panel("\u2764\ufe0f for freedom", style="bold cyan", box=box.ROUNDED))
 
 
+def prompt_for_token():
+    """Prompt user for GitHub token with Rich styling."""
+    console.print("\n[bold cyan]\U0001f511 GitHub Token Setup[/bold cyan]")
+    console.print(
+        "A GitHub token increases rate limits from [red]60[/red] to [green]5000[/green] requests/hour."
+    )
+    console.print(
+        "[dim]Your token will NOT be stored and is only used for this session.[/dim]\n"
+    )
+
+    use_token = Confirm.ask("Do you want to provide a GitHub token?", default=False)
+
+    if use_token:
+        console.print(
+            "\n[dim]Paste your GitHub token (input will be hidden):[/dim]"
+        )
+        token = getpass("Token: ").strip()
+
+        if token:
+            console.print("[green]\u2713[/green] Token received\n")
+            return token
+        else:
+            console.print(
+                "[yellow]![/yellow] No token provided, continuing without authentication\n"
+            )
+            return None
+    else:
+        console.print(
+            "[blue]i[/blue] Continuing without authentication\n"
+        )
+        return None
+
+
+def save_partial_results(servers, filename="v2ray_servers_partial.txt"):
+    """Save partial results with Rich progress bar."""
+    if not servers:
+        console.print("[yellow]![/yellow] No servers to save")
+        return
+
+    try:
+        # Handle both dict and string formats
+        if servers and isinstance(servers[0], dict):
+            configs = [s.get("config", s) for s in servers]
+        else:
+            configs = servers
+
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "[yellow]Saving partial results...[/yellow]", total=len(configs)
+            )
+
+            with open(filename, "w", encoding="utf-8") as f:
+                for i, server in enumerate(configs):
+                    f.write(f"{server}\n")
+                    progress.update(task, advance=1)
+
+        console.print(
+            f"\n[green]\u2713[/green] Saved [bold]{len(configs)}[/bold] "
+            f"servers to [bold cyan]{filename}[/bold cyan]"
+        )
+        console.print("[dim]You can resume or use these servers.[/dim]\n")
+    except Exception as e:
+        console.print(
+            f"\n[red]\u2717[/red] Failed to save partial results: [bold]{str(e)}[/bold]\n"
+        )
+
+
 def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
-    """Fetch servers with rich progress."""
+    """Fetch servers with rich progress and interruption handling."""
+    global _partial_servers, _interrupted
 
     with Progress(
         SpinnerColumn(),
@@ -40,6 +127,8 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
         progress.update(task, description="Initializing finder...")
 
         try:
+            _interrupted = False
+            
             if check_health:
                 progress.update(
                     task, description="Fetching and health-checking servers..."
@@ -54,6 +143,7 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
             else:
                 progress.update(task, description="Fetching known sources...")
                 servers = finder.get_servers_from_known_sources()
+                _partial_servers = servers
 
                 if use_search:
                     progress.update(
@@ -62,6 +152,7 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
                     github_servers = finder.get_servers_from_github()
                     servers.extend(github_servers)
                     servers = list(dict.fromkeys(servers))
+                    _partial_servers = servers
 
             progress.update(task, description="Done!")
             progress.remove_task(task)
@@ -103,6 +194,14 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
 
             return servers
 
+        except KeyboardInterrupt:
+            progress.remove_task(task)
+            if _partial_servers:
+                console.print(
+                    f"\n[yellow]![/yellow] Interrupted - found [bold]{len(_partial_servers)}[/bold] servers so far"
+                )
+                save_partial_results(_partial_servers)
+            return _partial_servers if _partial_servers else []
         except Exception as e:
             progress.remove_task(task)
             console.print(f"\n[red]\u2717[/red] Error: [bold]{str(e)}[/bold]")
@@ -236,8 +335,11 @@ def save_servers(servers):
 
 
 def interactive_mode(finder):
-    """Rich interactive TUI."""
+    """Rich interactive TUI with interruption support."""
+    global _partial_servers
+    
     print_welcome()
+    console.print("[dim]\U0001f4a1 Tip: Press Ctrl+C during operations to save partial results[/dim]\n")
 
     while True:
         console.print("\n[bold cyan]Options:[/bold cyan]")
@@ -248,12 +350,18 @@ def interactive_mode(finder):
         console.print("[cyan]5.[/] Save to file")
         console.print("[cyan]6.[/] Exit")
 
-        choice = Prompt.ask("\nSelect option", choices=["1", "2", "3", "4", "5", "6"])
+        try:
+            choice = Prompt.ask("\nSelect option", choices=["1", "2", "3", "4", "5", "6"])
+        except KeyboardInterrupt:
+            console.print("\n\n[bold cyan]\U0001f44b Goodbye![/bold cyan]")
+            break
 
         if choice == "1":
             finder._cached_servers = fetch_servers(finder, use_search=False)
+            _partial_servers = finder._cached_servers
         elif choice == "2":
             finder._cached_servers = fetch_servers(finder, use_search=True)
+            _partial_servers = finder._cached_servers
         elif choice == "3":
             use_search = Confirm.ask("Include GitHub search?", default=False)
             console.print(
@@ -262,6 +370,7 @@ def interactive_mode(finder):
             finder._cached_servers = fetch_servers(
                 finder, use_search=use_search, check_health=True
             )
+            _partial_servers = finder._cached_servers
         elif choice == "4":
             cached = getattr(finder, "_cached_servers", [])
             has_health = cached and isinstance(cached[0], dict)
@@ -275,6 +384,11 @@ def interactive_mode(finder):
 
 def main():
     """Rich CLI entrypoint."""
+    global _partial_servers, _finder_instance
+    
+    # Setup signal handler
+    signal.signal(signal.SIGINT, signal_handler)
+    
     parser = argparse.ArgumentParser(
         description="v2ray-finder (Rich CLI)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -285,6 +399,7 @@ Examples:
   v2ray-finder-rich -s -l 200          # GitHub search + limit
   v2ray-finder-rich -c --min-quality 60  # health check + filter
   v2ray-finder-rich --stats-only -c    # stats with health data
+  v2ray-finder-rich --prompt-token     # prompt for GitHub token
         """,
     )
 
@@ -296,6 +411,11 @@ Examples:
         "-s", "--search", action="store_true", help="enable GitHub search"
     )
     parser.add_argument("-t", "--token", help="GitHub personal access token")
+    parser.add_argument(
+        "--prompt-token",
+        action="store_true",
+        help="Prompt for GitHub token interactively (secure input)",
+    )
     parser.add_argument("--stats-only", action="store_true", help="show stats only")
     parser.add_argument(
         "-i", "--interactive", action="store_true", help="force interactive mode"
@@ -321,7 +441,30 @@ Examples:
 
     args = parser.parse_args()
 
-    finder = V2RayServerFinder(token=args.token)
+    # Token handling
+    token = None
+    
+    if args.token:
+        token = args.token
+        console.print(
+            "[red]WARNING:[/red] Passing tokens via command line is insecure!",
+            file=sys.stderr,
+        )
+    elif args.prompt_token:
+        token = prompt_for_token()
+    
+    import os
+    token_from_env = os.environ.get("GITHUB_TOKEN")
+    if not token and token_from_env:
+        token = token_from_env
+        console.print("[blue]i[/blue] Using token from GITHUB_TOKEN environment variable")
+    elif not token and not args.prompt_token:
+        # In interactive mode, offer token prompt
+        if args.interactive or (not args.output and not args.stats_only):
+            token = prompt_for_token()
+
+    finder = V2RayServerFinder(token=token)
+    _finder_instance = finder
 
     if args.interactive or (not args.output and not args.stats_only):
         interactive_mode(finder)
@@ -329,43 +472,59 @@ Examples:
 
     print_welcome()
 
-    if args.check_health:
-        servers = finder.get_servers_with_health(
-            use_github_search=args.search,
-            check_health=True,
-            health_timeout=args.health_timeout,
-            min_quality_score=args.min_quality,
-            filter_unhealthy=True,
-        )
-    else:
-        servers = fetch_servers(finder, use_search=args.search)
-
-    if not servers:
-        sys.exit(1)
-
-    if args.limit > 0:
-        servers = servers[: args.limit]
-
-    if args.stats_only or not args.output:
-        show_stats(servers, show_health=args.check_health)
-
-    if args.output:
-        if args.check_health and servers and isinstance(servers[0], dict):
-            output_servers = [s["config"] for s in servers]
-        else:
-            output_servers = servers
-
-        try:
-            with open(args.output, "w", encoding="utf-8") as f:
-                for server in output_servers:
-                    f.write(f"{server}\n")
-            console.print(
-                f"\n[green]\u2713[/green] Saved **[bold]{len(output_servers)}**[/bold]"
-                f" servers to **[bold cyan]{args.output}**[/bold cyan]"
+    try:
+        if args.check_health:
+            servers = finder.get_servers_with_health(
+                use_github_search=args.search,
+                check_health=True,
+                health_timeout=args.health_timeout,
+                min_quality_score=args.min_quality,
+                filter_unhealthy=True,
             )
-        except Exception as e:
-            console.print(f"\n[red]\u2717[/red] Failed to save: [bold]{str(e)}[/bold]")
-            sys.exit(1)
+        else:
+            servers = fetch_servers(finder, use_search=args.search)
+        
+        _partial_servers = servers
+
+        if not servers:
+            if _partial_servers:
+                console.print("[yellow]![/yellow] Using partial results")
+                servers = _partial_servers
+            else:
+                sys.exit(1)
+
+        if args.limit > 0:
+            servers = servers[: args.limit]
+
+        if args.stats_only or not args.output:
+            show_stats(servers, show_health=args.check_health)
+
+        if args.output:
+            if args.check_health and servers and isinstance(servers[0], dict):
+                output_servers = [s["config"] for s in servers]
+            else:
+                output_servers = servers
+
+            try:
+                with open(args.output, "w", encoding="utf-8") as f:
+                    for server in output_servers:
+                        f.write(f"{server}\n")
+                console.print(
+                    f"\n[green]\u2713[/green] Saved **[bold]{len(output_servers)}**[/bold]"
+                    f" servers to **[bold cyan]{args.output}**[/bold cyan]"
+                )
+            except Exception as e:
+                console.print(f"\n[red]\u2717[/red] Failed to save: [bold]{str(e)}[/bold]")
+                sys.exit(1)
+                
+    except KeyboardInterrupt:
+        console.print("\n\n[yellow]⚠[/yellow] [bold]Operation interrupted[/bold]")
+        if _partial_servers:
+            if args.output:
+                save_partial_results(_partial_servers, args.output)
+            else:
+                save_partial_results(_partial_servers)
+        sys.exit(130)
 
 
 if __name__ == "__main__":
