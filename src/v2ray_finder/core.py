@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -70,6 +71,10 @@ class V2RayServerFinder:
         self.raise_errors = raise_errors
         self._last_rate_limit_info: Optional[Dict] = None
         self._token_source: str = "none"
+        
+        # Stop mechanism for graceful interruption
+        self._stop_requested = threading.Event()
+        self._lock = threading.Lock()
 
         # Try to get token from environment if not provided
         if token is None:
@@ -101,6 +106,23 @@ class V2RayServerFinder:
             logger.info(
                 "No GitHub token provided - using unauthenticated access (rate limit: 60/hour)"
             )
+
+    def request_stop(self):
+        """Request graceful stop of ongoing operations."""
+        self._stop_requested.set()
+        logger.info("Stop requested - operations will terminate gracefully")
+
+    def reset_stop(self):
+        """Reset stop flag for new operations."""
+        self._stop_requested.clear()
+
+    def should_stop(self) -> bool:
+        """Check if stop has been requested.
+        
+        Returns:
+            True if stop was requested, False otherwise
+        """
+        return self._stop_requested.is_set()
 
     def _validate_and_sanitize_token(self, token: str) -> Optional[str]:
         """
@@ -250,6 +272,10 @@ class V2RayServerFinder:
             Result[List[Dict], V2RayFinderError]: Ok with list of repository metadata,
                                                    or Err with error details
         """
+        if self.should_stop():
+            logger.info("Search repos stopped by user request")
+            return Ok([])
+            
         if keywords is None:
             keywords = ["v2ray", "free", "config"]
 
@@ -282,6 +308,10 @@ class V2RayServerFinder:
 
             results = []
             for repo in data.get("items", []):
+                if self.should_stop():
+                    logger.info(f"Search repos interrupted after {len(results)} repos")
+                    break
+                    
                 results.append(
                     {
                         "name": repo["name"],
@@ -362,6 +392,10 @@ class V2RayServerFinder:
             Result[List[Dict], V2RayFinderError]: Ok with list of file metadata,
                                                    or Err with error details
         """
+        if self.should_stop():
+            logger.info("Get repo files stopped by user request")
+            return Ok([])
+            
         url = f"{self.BASE_URL}/repos/{repo_full_name}/contents/{path}"
 
         try:
@@ -381,6 +415,10 @@ class V2RayServerFinder:
 
             config_files = []
             for file in files if isinstance(files, list) else [files]:
+                if self.should_stop():
+                    logger.info(f"Get repo files interrupted after {len(config_files)} files")
+                    break
+                    
                 if file.get("type") == "file":
                     name_lower = file["name"].lower()
                     if any(
@@ -453,6 +491,10 @@ class V2RayServerFinder:
         supported_protocols = ["vmess://", "vless://", "trojan://", "ss://", "ssr://"]
 
         for line in content.split("\n"):
+            if self.should_stop():
+                logger.info(f"Parse servers interrupted after {len(servers)} servers")
+                break
+                
             line = line.strip()
             if any(line.startswith(p) for p in supported_protocols):
                 servers.append(line)
@@ -473,6 +515,10 @@ class V2RayServerFinder:
             Result[List[str], V2RayFinderError]: Ok with parsed server configs,
                                                   or Err with error details
         """
+        if self.should_stop():
+            logger.info("Get servers from URL stopped by user request")
+            return Ok([])
+            
         try:
             response = requests.get(url, timeout=timeout)
             response.raise_for_status()
@@ -539,6 +585,10 @@ class V2RayServerFinder:
         errors = []
 
         for keyword in search_keywords:
+            if self.should_stop():
+                logger.info(f"GitHub search stopped by user request after {len(all_servers)} servers")
+                break
+                
             repos_result = self.search_repos(
                 keywords=[keyword, "v2ray"], max_results=max_repos
             )
@@ -552,6 +602,10 @@ class V2RayServerFinder:
             repos = repos_result.unwrap()
 
             for repo in repos[:max_repos]:
+                if self.should_stop():
+                    logger.info(f"GitHub search stopped by user request after {len(all_servers)} servers")
+                    break
+                    
                 files_result = self.get_repo_files(repo["full_name"])
 
                 if files_result.is_err():
@@ -563,6 +617,10 @@ class V2RayServerFinder:
                 files = files_result.unwrap()
 
                 for file in files:
+                    if self.should_stop():
+                        logger.info(f"GitHub search stopped by user request after {len(all_servers)} servers")
+                        break
+                        
                     if file["download_url"]:
                         servers_result = self.get_servers_from_url(file["download_url"])
 
@@ -594,6 +652,10 @@ class V2RayServerFinder:
         errors = []
 
         for url in self.DIRECT_SOURCES:
+            if self.should_stop():
+                logger.info(f"Known sources fetch stopped by user request after {len(all_servers)} servers")
+                break
+                
             result = self.get_servers_from_url(url)
 
             if result.is_ok():
@@ -622,7 +684,7 @@ class V2RayServerFinder:
         """
         servers = self.get_servers_from_known_sources()
 
-        if use_github_search:
+        if use_github_search and not self.should_stop():
             github_servers = self.get_servers_from_github()
             servers.extend(github_servers)
             servers = list(dict.fromkeys(servers))
@@ -646,6 +708,10 @@ class V2RayServerFinder:
         server_list = []
 
         for i, server in enumerate(servers, 1):
+            if self.should_stop():
+                logger.info(f"Get servers sorted stopped by user request after {len(server_list)} servers")
+                break
+                
             protocol = server.split("://")[0] if "://" in server else "unknown"
             server_list.append(
                 {
@@ -685,6 +751,19 @@ class V2RayServerFinder:
             List of server dictionaries with health information
         """
         servers = self.get_all_servers(use_github_search=use_github_search)
+
+        if self.should_stop():
+            logger.info("Health check stopped by user request")
+            return [
+                {
+                    "config": server,
+                    "protocol": (
+                        server.split("://")[0] if "://" in server else "unknown"
+                    ),
+                    "health_checked": False,
+                }
+                for server in servers
+            ]
 
         if not check_health:
             # Return without health info
@@ -732,6 +811,11 @@ class V2RayServerFinder:
         checker = HealthChecker(
             timeout=health_timeout, concurrent_limit=concurrent_checks
         )
+        
+        # Pass stop callback to health checker if it supports it
+        if hasattr(checker, 'set_stop_callback'):
+            checker.set_stop_callback(self.should_stop)
+            
         health_results = checker.check_servers(server_tuples)
 
         # Filter if requested
@@ -748,12 +832,16 @@ class V2RayServerFinder:
         # Convert to dict format
         result_list = []
         for health in health_results:
+            if self.should_stop():
+                logger.info(f"Health results conversion stopped by user request after {len(result_list)} servers")
+                break
+                
             result_list.append(
                 {
                     "config": health.config,
                     "protocol": health.protocol,
                     "health_checked": True,
-                    "status": health.status.value,
+                    "health_status": health.status.value,
                     "latency_ms": health.latency_ms,
                     "quality_score": health.quality_score,
                     "host": health.host,
