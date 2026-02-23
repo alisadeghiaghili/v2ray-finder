@@ -1,14 +1,17 @@
-"""Tests for core V2RayServerFinder functionality.
+"""Tests for core V2RayServerFinder functionality."""
 
-Updated to work with new error handling.
-"""
-
+import os
 from unittest.mock import Mock, patch
 
 import pytest
 import requests
 
 from v2ray_finder import V2RayServerFinder
+from v2ray_finder.exceptions import (
+    AuthenticationError,
+    GitHubAPIError,
+    V2RayFinderError,
+)
 
 
 @pytest.fixture
@@ -16,22 +19,137 @@ def finder():
     return V2RayServerFinder()
 
 
+# ---------------------------------------------------------------------------
+# Initialisation & token validation
+# ---------------------------------------------------------------------------
+
+
 def test_init_without_token(finder):
-    """Test initialization without GitHub token."""
+    """No token → no Authorization header."""
     assert "Authorization" not in finder.headers
     assert finder.headers["Accept"] == "application/vnd.github.v3+json"
 
 
 def test_init_with_token():
-    """Test initialization with GitHub token."""
-    # Token must be >= 20 chars and alphanumeric to pass validation
-    valid_token = "ghp_" + "a" * 36  # 40 chars, known prefix, passes all checks
+    """Valid token parameter → Authorization header set."""
+    valid_token = "ghp_" + "a" * 36
     finder = V2RayServerFinder(token=valid_token)
     assert finder.headers["Authorization"] == f"token {valid_token}"
 
 
+def test_init_reads_token_from_env():
+    """GITHUB_TOKEN env var must be picked up when no token param is passed."""
+    valid_token = "ghp_" + "b" * 36
+    with patch.dict(os.environ, {"GITHUB_TOKEN": valid_token}):
+        finder = V2RayServerFinder()
+    assert finder.headers.get("Authorization") == f"token {valid_token}"
+
+
+def test_init_token_too_short_rejected():
+    """Token shorter than 20 chars must be rejected silently."""
+    finder = V2RayServerFinder(token="tooshort")
+    assert "Authorization" not in finder.headers
+
+
+def test_init_token_invalid_chars_rejected():
+    """Token containing non-alphanumeric chars must be rejected."""
+    finder = V2RayServerFinder(token="ghp_" + "a" * 15 + "!@#-bad")
+    assert "Authorization" not in finder.headers
+
+
+def test_init_token_no_known_prefix_still_accepted():
+    """A token without a known prefix (ghp_, gho_, …) is accepted after a warning."""
+    token = "a" * 40  # 40 alphanumeric chars, no recognised prefix
+    finder = V2RayServerFinder(token=token)
+    assert finder.headers.get("Authorization") == f"token {token}"
+
+
+def test_from_env_classmethod():
+    """V2RayServerFinder.from_env() is a convenience wrapper around __init__."""
+    valid_token = "ghp_" + "c" * 36
+    with patch.dict(os.environ, {"GITHUB_TOKEN": valid_token}):
+        finder = V2RayServerFinder.from_env()
+    assert finder.headers.get("Authorization") == f"token {valid_token}"
+
+
+# ---------------------------------------------------------------------------
+# search_repos — HTTP error branches
+# ---------------------------------------------------------------------------
+
+
+def test_search_repos_returns_401_as_auth_error():
+    """HTTP 401 must surface as Err(AuthenticationError)."""
+    mock_resp = Mock()
+    mock_resp.status_code = 401
+    mock_resp.headers = {}
+
+    finder = V2RayServerFinder()
+    with patch("requests.get", return_value=mock_resp):
+        result = finder.search_repos()
+
+    assert result.is_err()
+    assert isinstance(result.error, AuthenticationError)
+
+
+def test_search_repos_returns_404_as_github_api_error():
+    """HTTP 404 on the search endpoint must surface as Err(GitHubAPIError)."""
+    mock_resp = Mock()
+    mock_resp.status_code = 404
+    mock_resp.headers = {}
+
+    finder = V2RayServerFinder()
+    with patch("requests.get", return_value=mock_resp):
+        result = finder.search_repos()
+
+    assert result.is_err()
+    assert isinstance(result.error, GitHubAPIError)
+    assert result.error.status_code == 404
+
+
+def test_search_repos_unexpected_exception_wrapped_in_v2ray_finder_error():
+    """Any unexpected exception must be wrapped as V2RayFinderError, not propagated."""
+    finder = V2RayServerFinder()
+    with patch("requests.get", side_effect=RuntimeError("totally unexpected")):
+        result = finder.search_repos()
+
+    assert result.is_err()
+    assert isinstance(result.error, V2RayFinderError)
+
+
+# ---------------------------------------------------------------------------
+# search_repos_or_empty — raise_errors flag
+# ---------------------------------------------------------------------------
+
+
+def test_search_repos_or_empty_raises_when_raise_errors_true():
+    """search_repos_or_empty() must re-raise when raise_errors=True."""
+    finder = V2RayServerFinder(raise_errors=True)
+    with patch(
+        "requests.get",
+        side_effect=requests.exceptions.ConnectionError("conn failed"),
+    ):
+        with pytest.raises(Exception):
+            finder.search_repos_or_empty()
+
+
+def test_search_repos_or_empty_returns_empty_when_raise_errors_false():
+    """search_repos_or_empty() must return [] on error when raise_errors=False."""
+    finder = V2RayServerFinder(raise_errors=False)
+    with patch(
+        "requests.get",
+        side_effect=requests.exceptions.ConnectionError("conn failed"),
+    ):
+        result = finder.search_repos_or_empty()
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Parsing & deduplication
+# ---------------------------------------------------------------------------
+
+
 def test_parse_servers():
-    """Test server parsing from text content."""
+    """_parse_servers must extract all supported protocols and ignore others."""
     finder = V2RayServerFinder()
     content = """
 vmess://eyJhZGQiOiIxMjcuMC4wLjEifQ==
@@ -43,7 +161,6 @@ ssr://config5
 invalid://config6
     """
     servers = finder._parse_servers(content)
-
     assert len(servers) == 5
     assert all(
         s.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://"))
@@ -52,7 +169,7 @@ invalid://config6
 
 
 def test_get_all_servers_without_github_search(finder):
-    """Test fetching from known sources only."""
+    """get_all_servers() from known sources only."""
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = "vmess://test1\nvless://test2"
@@ -60,13 +177,12 @@ def test_get_all_servers_without_github_search(finder):
     with patch("requests.get", return_value=mock_response):
         servers = finder.get_all_servers(use_github_search=False)
 
-        # Should have servers from all DIRECT_SOURCES
-        assert len(servers) > 0
-        assert all(isinstance(s, str) for s in servers)
+    assert len(servers) > 0
+    assert all(isinstance(s, str) for s in servers)
 
 
 def test_get_servers_sorted(finder):
-    """Test getting sorted servers with metadata."""
+    """get_servers_sorted must return dicts with required metadata keys."""
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = "vmess://config1\nvless://config2"
@@ -74,35 +190,32 @@ def test_get_servers_sorted(finder):
     with patch("requests.get", return_value=mock_response):
         servers = finder.get_servers_sorted(limit=5, use_github_search=False)
 
-        assert len(servers) > 0
-        for server in servers:
-            assert "index" in server
-            assert "protocol" in server
-            assert "config" in server
-            assert "fetched_at" in server
-            assert server["protocol"] in ["vmess", "vless", "trojan", "ss", "ssr"]
+    assert len(servers) > 0
+    for server in servers:
+        assert "index" in server
+        assert "protocol" in server
+        assert "config" in server
+        assert "fetched_at" in server
+        assert server["protocol"] in ["vmess", "vless", "trojan", "ss", "ssr"]
 
 
 def test_deduplication(finder):
-    """Test that duplicate servers are removed."""
+    """Duplicate server strings must be removed."""
     mock_response = Mock()
     mock_response.status_code = 200
-    # Same server repeated
     mock_response.text = "vmess://config1\nvmess://config1\nvless://config2"
 
     with patch("requests.get", return_value=mock_response):
         servers = finder.get_all_servers(use_github_search=False)
 
-        # Should have unique servers only
-        assert len(servers) == len(set(servers))
+    assert len(servers) == len(set(servers))
 
 
 def test_save_to_file(finder, tmp_path):
-    """Test saving servers to file."""
+    """save_to_file must write valid server lines to disk."""
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.text = "vmess://config1\nvless://config2\ntrojan://config3"
-
     test_file = tmp_path / "test_servers.txt"
 
     with patch("requests.get", return_value=mock_response):
@@ -112,60 +225,49 @@ def test_save_to_file(finder, tmp_path):
             use_github_search=False,
         )
 
-        assert count > 0
-        assert test_file.exists()
-
-        # Verify file content
-        content = test_file.read_text()
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
-        assert len(lines) > 0
-        assert all(
-            l.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://"))
-            for l in lines
-        )
+    assert count > 0
+    assert test_file.exists()
+    content = test_file.read_text()
+    lines = [l.strip() for l in content.split("\n") if l.strip()]
+    assert len(lines) > 0
+    assert all(
+        l.startswith(("vmess://", "vless://", "trojan://", "ss://", "ssr://"))
+        for l in lines
+    )
 
 
 def test_empty_response_handling(finder):
-    """Test handling of empty responses."""
+    """Empty response body must yield Ok([])."""
     mock_response = Mock()
     mock_response.status_code = 200
-    mock_response.text = ""  # Empty content
+    mock_response.text = ""
 
     with patch("requests.get", return_value=mock_response):
         result = finder.get_servers_from_url("https://example.com")
 
-        assert result.is_ok()
-        servers = result.unwrap()
-        assert len(servers) == 0
+    assert result.is_ok()
+    assert result.unwrap() == []
 
 
 def test_protocol_detection():
-    """Test that all supported protocols are detected."""
+    """All five supported protocols must be detected."""
     finder = V2RayServerFinder()
-    content = """
-vmess://config1
-vless://config2
-trojan://config3
-ss://config4
-ssr://config5
-    """
+    content = "\n".join(
+        ["vmess://c1", "vless://c2", "trojan://c3", "ss://c4", "ssr://c5"]
+    )
     servers = finder._parse_servers(content)
-
     protocols = [s.split("://")[0] for s in servers]
-    assert "vmess" in protocols
-    assert "vless" in protocols
-    assert "trojan" in protocols
-    assert "ss" in protocols
-    assert "ssr" in protocols
+    for proto in ["vmess", "vless", "trojan", "ss", "ssr"]:
+        assert proto in protocols
+
+
+# ---------------------------------------------------------------------------
+# _check_rate_limit — malformed headers (added in fix commit)
+# ---------------------------------------------------------------------------
 
 
 def test_check_rate_limit_malformed_headers_logs_debug(finder):
-    """Malformed rate-limit header values must not raise; a DEBUG log must fire.
-
-    GitHub proxies or non-standard gateways can return non-integer strings
-    in X-RateLimit-* headers.  The previous bare `pass` swallowed this
-    silently; now it must emit a debug log so operators can diagnose it.
-    """
+    """Malformed rate-limit header values must not raise; a DEBUG log must fire."""
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.headers = {
@@ -175,10 +277,7 @@ def test_check_rate_limit_malformed_headers_logs_debug(finder):
     }
 
     with patch("v2ray_finder.core.logger") as mock_logger:
-        # Must not raise despite malformed header values
         finder._check_rate_limit(mock_response)
-
-        # Exactly one debug call must have fired
         mock_logger.debug.assert_called_once()
         log_message = mock_logger.debug.call_args[0][0]
         assert "Malformed" in log_message
@@ -187,10 +286,7 @@ def test_check_rate_limit_malformed_headers_logs_debug(finder):
 
 
 def test_check_rate_limit_malformed_headers_does_not_update_state(finder):
-    """State (_last_rate_limit_info) must not be updated on malformed headers.
-
-    If parsing fails, we must not persist a partial or corrupted dict.
-    """
+    """State must not be updated when header parsing fails."""
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.headers = {
@@ -200,6 +296,4 @@ def test_check_rate_limit_malformed_headers_does_not_update_state(finder):
     }
 
     finder._check_rate_limit(mock_response)
-
-    # _last_rate_limit_info must still be None — nothing valid to store
     assert finder._last_rate_limit_info is None
