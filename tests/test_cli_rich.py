@@ -97,7 +97,6 @@ def test_show_stats_with_health_data(mock_console):
         },
     ]
     show_stats(servers, show_health=True)
-    # Two tables + avg lines should generate multiple print calls
     assert mock_console.print.call_count >= 2
 
 
@@ -141,10 +140,20 @@ def test_save_servers_with_health_dicts(mock_console, mock_progress, tmp_path):
     """save_servers() extracts 'config' key when dicts are passed."""
     out_file = str(tmp_path / "health.txt")
     servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 90.0, "latency_ms": 50.0},
-        {"config": "vless://s2", "protocol": "vless", "health_status": "healthy",
-         "quality_score": 85.0, "latency_ms": 60.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 90.0,
+            "latency_ms": 50.0,
+        },
+        {
+            "config": "vless://s2",
+            "protocol": "vless",
+            "health_status": "healthy",
+            "quality_score": 85.0,
+            "latency_ms": 60.0,
+        },
     ]
     with patch("v2ray_finder.cli_rich.Prompt") as mock_prompt:
         with patch("v2ray_finder.cli_rich.IntPrompt") as mock_int:
@@ -182,8 +191,13 @@ def test_fetch_servers_silent(mock_console, mock_progress, finder):
 def test_fetch_servers_with_health_check(mock_console, mock_progress):
     """fetch_servers(check_health=True) calls get_servers_with_health."""
     health_servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 90.0, "latency_ms": 50.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 90.0,
+            "latency_ms": 50.0,
+        },
     ]
     f = Mock()
     f.get_servers_with_health.return_value = health_servers
@@ -201,7 +215,7 @@ def test_fetch_servers_exception_returns_empty(mock_console, mock_progress):
 
 
 # ---------------------------------------------------------------------------
-# interactive_mode  — menu: 1 quick, 2 full, 3 health, 4 stats, 5 save, 6 exit
+# interactive_mode  -- menu: 1 quick, 2 full, 3 health, 4 stats, 5 save, 6 exit
 # ---------------------------------------------------------------------------
 
 
@@ -295,17 +309,25 @@ def test_main_output_with_health_check(mock_console, mock_progress, tmp_path):
     """main() with -o -c extracts config strings from health dicts."""
     out_file = str(tmp_path / "healthy.txt")
     servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 90.0, "latency_ms": 50.0},
-        {"config": "vless://s2", "protocol": "vless", "health_status": "healthy",
-         "quality_score": 80.0, "latency_ms": 70.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 90.0,
+            "latency_ms": 50.0,
+        },
+        {
+            "config": "vless://s2",
+            "protocol": "vless",
+            "health_status": "healthy",
+            "quality_score": 80.0,
+            "latency_ms": 70.0,
+        },
     ]
     with patch("sys.argv", ["v2ray-finder-rich", "-o", out_file, "-c"]):
         mock_finder = Mock()
         mock_finder.get_servers_with_health.return_value = servers
-        with patch(
-            "v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder
-        ):
+        with patch("v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder):
             main()
     lines = [ln for ln in open(out_file).read().splitlines() if ln]
     assert lines == ["vmess://s1", "vless://s2"]

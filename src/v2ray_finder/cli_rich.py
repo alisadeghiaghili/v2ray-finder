@@ -19,12 +19,12 @@ console = Console()
 def print_welcome():
     """Print welcome banner."""
     welcome = """
-# v2ray-finder (Rich Edition) ✨
+# v2ray-finder (Rich Edition) \u2728
 
 **Fetch V2Ray servers from GitHub and curated sources**
     """
     console.print(Markdown(welcome))
-    console.print(Panel("❤️ for freedom", style="bold cyan", box=box.ROUNDED))
+    console.print(Panel("\u2764\ufe0f for freedom", style="bold cyan", box=box.ROUNDED))
 
 
 def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
@@ -52,7 +52,6 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
                     filter_unhealthy=False,
                 )
             else:
-                # Known sources
                 progress.update(task, description="Fetching known sources...")
                 servers = finder.get_servers_from_known_sources()
 
@@ -62,7 +61,6 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
                     )
                     github_servers = finder.get_servers_from_github()
                     servers.extend(github_servers)
-                    # Dedupe preserving order
                     servers = list(dict.fromkeys(servers))
 
             progress.update(task, description="Done!")
@@ -70,10 +68,9 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
 
             if verbose:
                 console.print(
-                    f"\n[green]✓[/green] Found **[bold]{len(servers)}**[/bold] unique servers"
+                    f"\n[green]\u2713[/green] Found **[bold]{len(servers)}**[/bold] unique servers"
                 )
 
-                # Preview first 3
                 if check_health and servers and isinstance(servers[0], dict):
                     console.print("\n[bold]Top 3 by quality:[/bold]")
                     for i, server in enumerate(servers[:3], 1):
@@ -82,7 +79,6 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
                         latency = server.get("latency_ms", 0)
                         status = server.get("health_status", "unknown")
 
-                        # Color-code by status
                         if status == "healthy":
                             status_color = "green"
                         elif status == "degraded":
@@ -109,7 +105,7 @@ def fetch_servers(finder, use_search=False, check_health=False, verbose=True):
 
         except Exception as e:
             progress.remove_task(task)
-            console.print(f"\n[red]✗[/red] Error: [bold]{str(e)}[/bold]")
+            console.print(f"\n[red]\u2717[/red] Error: [bold]{str(e)}[/bold]")
             return []
 
 
@@ -119,10 +115,8 @@ def show_stats(servers, show_health=False):
         console.print("[yellow]! No servers to analyze[/yellow]")
         return
 
-    # Detect if health data is present
     has_health = servers and isinstance(servers[0], dict)
 
-    # Protocol counts
     protocols = {}
     for server in servers:
         if has_health:
@@ -131,9 +125,8 @@ def show_stats(servers, show_health=False):
             protocol = server.split("://")[0] if "://" in server else "unknown"
         protocols[protocol] = protocols.get(protocol, 0) + 1
 
-    # Magic trailing comma forces black to always keep expanded form
     table = Table(
-        title=f"📊 Statistics ({len(servers)} total servers)",
+        title=f"\U0001f4ca Statistics ({len(servers)} total servers)",
         box=box.ROUNDED,
     )
     table.add_column("Protocol", style="cyan", no_wrap=True)
@@ -147,18 +140,15 @@ def show_stats(servers, show_health=False):
 
     console.print(table)
 
-    # Health stats if available
     if has_health:
-        health_table = Table(title="💊 Health Status", box=box.ROUNDED)
+        health_table = Table(title="\U0001f48a Health Status", box=box.ROUNDED)
         health_table.add_column("Status", style="cyan")
         health_table.add_column("Count", justify="right", style="green bold")
         health_table.add_column("Percent", justify="right", style="magenta")
 
         healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
         degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(
-            1 for s in servers if s.get("health_status") == "unreachable"
-        )
+        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
         invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
 
         health_table.add_row(
@@ -183,16 +173,22 @@ def show_stats(servers, show_health=False):
         console.print(health_table)
 
         if healthy > 0:
-            avg_quality = sum(
-                s.get("quality_score", 0)
-                for s in servers
-                if s.get("health_status") == "healthy"
-            ) / healthy
-            avg_latency = sum(
-                s.get("latency_ms", 0)
-                for s in servers
-                if s.get("health_status") == "healthy"
-            ) / healthy
+            avg_quality = (
+                sum(
+                    s.get("quality_score", 0)
+                    for s in servers
+                    if s.get("health_status") == "healthy"
+                )
+                / healthy
+            )
+            avg_latency = (
+                sum(
+                    s.get("latency_ms", 0)
+                    for s in servers
+                    if s.get("health_status") == "healthy"
+                )
+                / healthy
+            )
             console.print(
                 f"\n[bold]Average quality (healthy):[/bold] {avg_quality:.1f}/100"
             )
@@ -207,12 +203,11 @@ def save_servers(servers):
         console.print("[yellow]! No servers loaded[/yellow]")
         return
 
-    filename = Prompt.ask("📁 Filename", default="v2ray_servers.txt")
-    limit = IntPrompt.ask("🔢 Limit (0 = all)", default=0)
+    filename = Prompt.ask("\U0001f4c1 Filename", default="v2ray_servers.txt")
+    limit = IntPrompt.ask("\U0001f522 Limit (0 = all)", default=0)
 
     servers_to_save = servers[:limit] if limit > 0 else servers
 
-    # Extract config strings if health data present
     if servers_to_save and isinstance(servers_to_save[0], dict):
         output_servers = [s["config"] for s in servers_to_save]
     else:
@@ -233,11 +228,11 @@ def save_servers(servers):
 
             progress.update(task, completed=len(output_servers))
             console.print(
-                f"\n[green]✓[/green] Saved **[bold]{len(output_servers)}**[/bold]"
+                f"\n[green]\u2713[/green] Saved **[bold]{len(output_servers)}**[/bold]"
                 f" servers to **[bold cyan]{filename}**[/bold cyan]"
             )
         except Exception as e:
-            console.print(f"\n[red]✗[/red] Save failed: [bold]{str(e)}[/bold]")
+            console.print(f"\n[red]\u2717[/red] Save failed: [bold]{str(e)}[/bold]")
 
 
 def interactive_mode(finder):
@@ -253,9 +248,7 @@ def interactive_mode(finder):
         console.print("[cyan]5.[/] Save to file")
         console.print("[cyan]6.[/] Exit")
 
-        choice = Prompt.ask(
-            "\nSelect option", choices=["1", "2", "3", "4", "5", "6"]
-        )
+        choice = Prompt.ask("\nSelect option", choices=["1", "2", "3", "4", "5", "6"])
 
         if choice == "1":
             finder._cached_servers = fetch_servers(finder, use_search=False)
@@ -276,7 +269,7 @@ def interactive_mode(finder):
         elif choice == "5":
             save_servers(getattr(finder, "_cached_servers", []))
         elif choice == "6":
-            console.print("\n[bold cyan]👋 Goodbye![/bold cyan]")
+            console.print("\n[bold cyan]\U0001f44b Goodbye![/bold cyan]")
             break
 
 
@@ -330,12 +323,10 @@ Examples:
 
     finder = V2RayServerFinder(token=args.token)
 
-    # Interactive mode
     if args.interactive or (not args.output and not args.stats_only):
         interactive_mode(finder)
         return
 
-    # Non-interactive
     print_welcome()
 
     if args.check_health:
@@ -359,7 +350,6 @@ Examples:
         show_stats(servers, show_health=args.check_health)
 
     if args.output:
-        # Extract config strings if health check was done
         if args.check_health and servers and isinstance(servers[0], dict):
             output_servers = [s["config"] for s in servers]
         else:
@@ -370,11 +360,11 @@ Examples:
                 for server in output_servers:
                     f.write(f"{server}\n")
             console.print(
-                f"\n[green]✓[/green] Saved **[bold]{len(output_servers)}**[/bold]"
+                f"\n[green]\u2713[/green] Saved **[bold]{len(output_servers)}**[/bold]"
                 f" servers to **[bold cyan]{args.output}**[/bold cyan]"
             )
         except Exception as e:
-            console.print(f"\n[red]✗[/red] Failed to save: [bold]{str(e)}[/bold]")
+            console.print(f"\n[red]\u2717[/red] Failed to save: [bold]{str(e)}[/bold]")
             sys.exit(1)
 
 

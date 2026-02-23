@@ -3,7 +3,6 @@
 import argparse
 import os
 import sys
-from typing import Optional
 
 from .core import V2RayServerFinder
 from .exceptions import AuthenticationError, RateLimitError
@@ -31,9 +30,7 @@ def print_stats(servers, show_health=False):
     if show_health and servers and isinstance(servers[0], dict):
         healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
         degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(
-            1 for s in servers if s.get("health_status") == "unreachable"
-        )
+        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
         invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
 
         print("\nHealth status:")
@@ -43,16 +40,22 @@ def print_stats(servers, show_health=False):
         print(f"  Invalid: {invalid}")
 
         if healthy > 0:
-            avg_quality = sum(
-                s.get("quality_score", 0)
-                for s in servers
-                if s.get("health_status") == "healthy"
-            ) / healthy
-            avg_latency = sum(
-                s.get("latency_ms", 0)
-                for s in servers
-                if s.get("health_status") == "healthy"
-            ) / healthy
+            avg_quality = (
+                sum(
+                    s.get("quality_score", 0)
+                    for s in servers
+                    if s.get("health_status") == "healthy"
+                )
+                / healthy
+            )
+            avg_latency = (
+                sum(
+                    s.get("latency_ms", 0)
+                    for s in servers
+                    if s.get("health_status") == "healthy"
+                )
+                / healthy
+            )
             print(f"\nAverage quality (healthy): {avg_quality:.1f}/100")
             print(f"Average latency (healthy): {avg_latency:.1f}ms")
 
@@ -119,9 +122,7 @@ def interactive_menu(finder: V2RayServerFinder):
             if not filename:
                 filename = "v2ray_servers.txt"
             use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
-            check_health = (
-                input("Check server health? (y/n): ").strip().lower() == "y"
-            )
+            check_health = input("Check server health? (y/n): ").strip().lower() == "y"
             limit_str = input("Limit (0 for all): ").strip()
             limit = int(limit_str) if limit_str and limit_str != "0" else None
 
@@ -148,9 +149,7 @@ def interactive_menu(finder: V2RayServerFinder):
 
         elif choice == "5":
             use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
-            check_health = (
-                input("Check server health? (y/n): ").strip().lower() == "y"
-            )
+            check_health = input("Check server health? (y/n): ").strip().lower() == "y"
             print("\nFetching servers for statistics...")
             if check_health:
                 servers = finder.get_servers_with_health(
@@ -227,7 +226,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Show warning if token passed via CLI
     if args.token:
         print(
             "WARNING: Passing tokens via command line is insecure!\n"
@@ -236,21 +234,17 @@ def main():
             file=sys.stderr,
         )
 
-    # Check if GITHUB_TOKEN env var is set
     token_from_env = os.environ.get("GITHUB_TOKEN")
     if not args.token and token_from_env and not args.quiet:
         print("Using GitHub token from GITHUB_TOKEN environment variable")
 
-    # Initialize finder (prefers env var over CLI arg)
     finder = V2RayServerFinder(token=args.token)
 
-    # Interactive mode if no arguments
     if not any([args.output, args.stats_only]):
         interactive_menu(finder)
         return
 
     try:
-        # Fetch servers
         if not args.quiet:
             action = "GitHub search" if args.search else "known sources"
             health_note = " with health checking" if args.check_health else ""
@@ -275,13 +269,11 @@ def main():
                     f"\nAPI calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
                 )
         elif args.output:
-            # Extract config strings if health check was done
             if args.check_health and servers and isinstance(servers[0], dict):
                 output_servers = [s["config"] for s in servers]
             else:
                 output_servers = servers
 
-            # Apply limit
             if args.limit:
                 output_servers = output_servers[: args.limit]
 

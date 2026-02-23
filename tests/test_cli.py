@@ -1,7 +1,7 @@
 """Tests for the standard CLI module."""
 
 import os
-from unittest.mock import Mock, call, mock_open, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -44,10 +44,20 @@ def test_print_stats_unknown_protocol(capsys):
 def test_print_stats_with_health_data(capsys):
     """show_health=True prints health breakdown when server dicts are given."""
     servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 90.0, "latency_ms": 50.0},
-        {"config": "vless://s2", "protocol": "vless", "health_status": "unreachable",
-         "quality_score": 10.0, "latency_ms": 0.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 90.0,
+            "latency_ms": 50.0,
+        },
+        {
+            "config": "vless://s2",
+            "protocol": "vless",
+            "health_status": "unreachable",
+            "quality_score": 10.0,
+            "latency_ms": 0.0,
+        },
     ]
     print_stats(servers, show_health=True)
     out = capsys.readouterr().out
@@ -104,8 +114,13 @@ def test_main_stats_with_search_shows_rate_info(capsys):
 def test_main_stats_with_health_check(capsys):
     """--stats-only -c calls get_servers_with_health and shows health data."""
     servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 95.0, "latency_ms": 40.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 95.0,
+            "latency_ms": 40.0,
+        },
     ]
     with patch("sys.argv", ["v2ray-finder", "--stats-only", "-c"]):
         mock_finder = Mock()
@@ -146,10 +161,20 @@ def test_main_output_with_health_check(tmp_path, capsys):
     """'-o -c' extracts config strings from health dicts and writes to file."""
     out_file = str(tmp_path / "healthy.txt")
     servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 90.0, "latency_ms": 50.0},
-        {"config": "vless://s2", "protocol": "vless", "health_status": "healthy",
-         "quality_score": 80.0, "latency_ms": 70.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 90.0,
+            "latency_ms": 50.0,
+        },
+        {
+            "config": "vless://s2",
+            "protocol": "vless",
+            "health_status": "healthy",
+            "quality_score": 80.0,
+            "latency_ms": 70.0,
+        },
     ]
     with patch("sys.argv", ["v2ray-finder", "-o", out_file, "-c"]):
         mock_finder = Mock()
@@ -260,8 +285,8 @@ def test_main_unexpected_error_exits_1():
 
 
 # ---------------------------------------------------------------------------
-# interactive_menu()  — menu numbers: 1 fetch, 2 github, 3 health, 4 save,
-#                                     5 stats, 6 rate-limit, 0 exit
+# interactive_menu()  -- menu: 1 fetch, 2 github, 3 health, 4 save,
+#                               5 stats, 6 rate-limit, 0 exit
 # ---------------------------------------------------------------------------
 
 
@@ -296,11 +321,16 @@ def test_interactive_menu_health_check(capsys):
     """Choice '3' runs health check and shows health stats."""
     finder = Mock()
     servers = [
-        {"config": "vmess://s1", "protocol": "vmess", "health_status": "healthy",
-         "quality_score": 90.0, "latency_ms": 50.0},
+        {
+            "config": "vmess://s1",
+            "protocol": "vmess",
+            "health_status": "healthy",
+            "quality_score": 90.0,
+            "latency_ms": 50.0,
+        },
     ]
     finder.get_servers_with_health.return_value = servers
-    # choice 3 → use_search=n, show_top=n, then exit
+    # choice 3 -> use_search=n, show_top=n, then exit
     with patch("builtins.input", side_effect=["3", "n", "n", "0"]):
         interactive_menu(finder)
     out = capsys.readouterr().out
@@ -312,7 +342,7 @@ def test_interactive_menu_save(tmp_path, capsys):
     out_file = str(tmp_path / "servers.txt")
     finder = Mock()
     finder.get_all_servers.return_value = ["vmess://s1", "vless://s2"]
-    # choice 4 → filename, use_search=n, check_health=n, limit=0, then exit
+    # choice 4 -> filename, use_search=n, check_health=n, limit=0, then exit
     with patch("builtins.input", side_effect=["4", out_file, "n", "n", "0", "0"]):
         interactive_menu(finder)
     out = capsys.readouterr().out
@@ -325,7 +355,7 @@ def test_interactive_menu_stats_only(capsys):
     """Choice '5' shows statistics without saving."""
     finder = Mock()
     finder.get_all_servers.return_value = ["vmess://s1", "trojan://s2"]
-    # choice 5 → use_search=n, check_health=n, then exit
+    # choice 5 -> use_search=n, check_health=n, then exit
     with patch("builtins.input", side_effect=["5", "n", "n", "0"]):
         interactive_menu(finder)
     assert "Total servers: 2" in capsys.readouterr().out
