@@ -209,7 +209,9 @@ def test_extract_ssr_valid():
 
 def test_extract_ssr_with_query_params():
     """/?obfsparam&... suffix is stripped before parsing."""
-    ssr_body = "host.example.com:1234:auth_sha1_v4:rc4-md5:http_simple:dGVzdA==/?obfsparam=abc"
+    ssr_body = (
+        "host.example.com:1234:auth_sha1_v4:rc4-md5:http_simple:dGVzdA==/?obfsparam=abc"
+    )
     encoded = base64.b64encode(ssr_body.encode()).decode().rstrip("=")
     result = ServerValidator.extract_ssr_info(f"ssr://{encoded}")
     assert result is not None
