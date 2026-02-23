@@ -147,12 +147,50 @@ class TestAsyncFetcher:
 
     @pytest.mark.asyncio
     async def test_fetch_rate_limit(self):
-        """Test handling rate limit (429)."""
+        """Test that a 429 response is correctly identified as a rate-limit failure.
+
+        Uses a mocked HTTP session instead of a live httpbin.org call.
+        httpbin.org/status/429 can time out under CI load, causing the
+        response to arrive as error='Timeout'/status_code=None instead
+        of the 429 we want to assert on.  The rate-limit handling path
+        is internal logic; it does not need a real network round-trip.
+        """
         if not AIOHTTP_AVAILABLE and not HTTPX_AVAILABLE:
             pytest.skip("No async HTTP library available")
 
         fetcher = AsyncFetcher(timeout=5.0, max_retries=1)
-        results = await fetcher.fetch_many_async(["https://httpbin.org/status/429"])
+        url = "https://example.com/rate-limited"
+
+        if fetcher.backend == "aiohttp":
+            import aiohttp as _aiohttp
+
+            mock_resp = Mock()
+            mock_resp.status = 429
+            mock_resp.text = AsyncMock(return_value="Too Many Requests")
+
+            # session.get() is used as an async context manager:
+            #   async with session.get(url) as response: ...
+            # so we need a context-manager mock whose __aenter__ yields mock_resp.
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_resp
+
+            with patch.object(_aiohttp.ClientSession, "get", return_value=mock_cm):
+                results = await fetcher.fetch_many_async([url])
+
+        else:  # httpx
+            import httpx as _httpx
+
+            mock_resp = Mock()
+            mock_resp.status_code = 429
+
+            # client.get() is awaited directly: response = await client.get(url)
+            with patch.object(
+                _httpx.AsyncClient,
+                "get",
+                new_callable=AsyncMock,
+                return_value=mock_resp,
+            ):
+                results = await fetcher.fetch_many_async([url])
 
         assert len(results) == 1
         assert results[0].success is False
