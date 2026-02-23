@@ -157,3 +157,49 @@ ssr://config5
     assert "trojan" in protocols
     assert "ss" in protocols
     assert "ssr" in protocols
+
+
+def test_check_rate_limit_malformed_headers_logs_debug(finder):
+    """Malformed rate-limit header values must not raise; a DEBUG log must fire.
+
+    GitHub proxies or non-standard gateways can return non-integer strings
+    in X-RateLimit-* headers.  The previous bare `pass` swallowed this
+    silently; now it must emit a debug log so operators can diagnose it.
+    """
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.headers = {
+        "X-RateLimit-Limit": "not-a-number",
+        "X-RateLimit-Remaining": "also-bad",
+        "X-RateLimit-Reset": "garbage",
+    }
+
+    with patch("v2ray_finder.core.logger") as mock_logger:
+        # Must not raise despite malformed header values
+        finder._check_rate_limit(mock_response)
+
+        # Exactly one debug call must have fired
+        mock_logger.debug.assert_called_once()
+        log_message = mock_logger.debug.call_args[0][0]
+        assert "Malformed" in log_message
+        assert "not-a-number" in log_message
+        assert "also-bad" in log_message
+
+
+def test_check_rate_limit_malformed_headers_does_not_update_state(finder):
+    """State (_last_rate_limit_info) must not be updated on malformed headers.
+
+    If parsing fails, we must not persist a partial or corrupted dict.
+    """
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.headers = {
+        "X-RateLimit-Limit": "bad",
+        "X-RateLimit-Remaining": "also-bad",
+        "X-RateLimit-Reset": None,
+    }
+
+    finder._check_rate_limit(mock_response)
+
+    # _last_rate_limit_info must still be None — nothing valid to store
+    assert finder._last_rate_limit_info is None

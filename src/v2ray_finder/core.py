@@ -223,7 +223,10 @@ class V2RayServerFinder:
                             f"Consider using a GitHub token for higher limits."
                         )
                 except (ValueError, TypeError):
-                    pass  # Ignore malformed headers
+                    logger.debug(
+                        f"Malformed rate limit headers ignored: "
+                        f"limit={limit!r}, remaining={remaining!r}, reset={reset!r}"
+                    )
 
     def get_rate_limit_info(self) -> Optional[Dict]:
         """Get the last known rate limit information.
