@@ -311,9 +311,7 @@ def show_stats(servers: List, show_health: bool = False) -> None:
 
         healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
         degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(
-            1 for s in servers if s.get("health_status") == "unreachable"
-        )
+        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
         invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
 
         health_table.add_row(
