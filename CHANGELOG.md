@@ -4,6 +4,67 @@ All notable changes to v2ray-finder will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.1] - 2026-02-24
+
+### Fixed
+
+- **Graceful stop / Ctrl+C handling** — complete overhaul across all layers:
+
+  **`core.py` — `get_servers_from_known_sources()`**
+  - Added `try/except KeyboardInterrupt` around each URL fetch
+  - On interrupt: calls `self.request_stop()`, breaks the loop, returns
+    whatever was already collected (partial results are no longer lost)
+
+  **`core.py` — `get_servers_from_github()`**
+  - Same `try/except KeyboardInterrupt` pattern applied to the repo-file
+    iteration loop
+  - Partial results from files fetched before Ctrl+C are preserved
+
+  **`core.py` — `get_servers_with_health()`**
+  - Added `health_batch_size` parameter (default `50`) to split the
+    server list into smaller batches
+  - `should_stop()` is checked between every batch — no longer necessary
+    to wait for all health checks to finish before the stop takes effect
+  - `try/except KeyboardInterrupt` inside the batch loop: already-checked
+    servers are returned immediately on interrupt
+
+  **`cli.py` — interactive menu**
+  - Removed `start_keyboard_listener()` / `stop_keyboard_listener()` calls
+    from `interactive_menu()` — the background thread competed with the
+    menu's own `input()` calls, silently discarding the first keystroke
+    after each operation
+  - Every menu operation (options 1–5) now has its own
+    `try/except KeyboardInterrupt` with partial-results save
+  - Replaced bare boolean `_stop_listener` flag with `threading.Event`
+    inside `StopController` for thread-safe lifecycle control
+  - `StopController` (listener thread) is now used **only** in the
+    non-interactive (`--output` / `--stats-only`) path where the main
+    thread never calls `input()` during a fetch
+
+  **`cli_rich.py` — Rich interactive mode**
+  - `_signal_handler()` now calls `_active_finder.request_stop()` before
+    re-raising `KeyboardInterrupt`; previously it only set a bare boolean
+    that the core loops never checked
+  - `fetch_servers()` updates the `partial` snapshot after every
+    individual step (known sources, then GitHub search) so a Ctrl+C at
+    any point yields whatever was collected up to that moment
+  - `StopController` (same pattern as plain CLI) used only in
+    non-interactive path to avoid competing `input()` threads
+
+### Tests
+
+- Added `TestHealthBatchStop` class to `tests/test_stop_mechanism.py`:
+  - `test_ki_during_batch_returns_partial` — KI on batch N returns
+    results from batches 1…N-1 and sets `should_stop()`
+  - `test_ki_does_not_propagate` — `KeyboardInterrupt` must not escape
+    `get_servers_with_health()`
+  - `test_should_stop_between_batches_stops_processing` — once
+    `should_stop()` is `True`, no further `check_servers()` calls are made
+  - `test_custom_batch_size_splits_work` — `health_batch_size=2` with 6
+    servers results in exactly 3 `check_servers()` calls
+
+---
+
 ## [0.2.0] - 2026-02-20
 
 ### Added
@@ -95,13 +156,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | Metric | Value |
 |--------|-------|
 | Source Lines | ~2,500+ |
-| Test Files | 7 |
-| Test Coverage | 78% |
+| Test Files | 8 |
+| Test Coverage | ~82% |
 | Supported Protocols | 5 (vmess, vless, trojan, ss, ssr) |
 | Interfaces | 3 (Python API, CLI, GUI) |
 | Python Versions | 3.8 – 3.12 |
 | Platforms | Linux, macOS, Windows |
-| Languages | 3 (فارسی, English, Deutsch) |
+| Languages | 3 (\u0641\u0627\u0631\u0633\u06cc, English, Deutsch) |
 
 ---
 
