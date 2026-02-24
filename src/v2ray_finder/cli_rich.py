@@ -311,7 +311,9 @@ def show_stats(servers: List, show_health: bool = False) -> None:
 
         healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
         degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
+        unreachable = sum(
+            1 for s in servers if s.get("health_status") == "unreachable"
+        )
         invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
 
         health_table.add_row(
@@ -357,7 +359,7 @@ def show_stats(servers: List, show_health: bool = False) -> None:
             )
 
 
-def save_servers_interactive(servers: List) -> None:
+def save_servers(servers: List) -> None:
     """Interactively ask for filename/limit then save."""
     if not servers:
         console.print("[yellow]! No servers loaded[/yellow]")
@@ -463,7 +465,7 @@ def interactive_mode(finder: V2RayServerFinder) -> None:
             show_stats(cached_servers, show_health=bool(has_health))
 
         elif choice == "5":
-            save_servers_interactive(cached_servers)
+            save_servers(cached_servers)
 
 
 def main() -> None:

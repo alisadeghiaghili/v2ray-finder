@@ -47,6 +47,7 @@ def finder():
         "vless://cfg2",
     ]
     f.get_servers_from_github.return_value = ["trojan://cfg3"]
+    f.should_stop.return_value = False
     return f
 
 
@@ -201,6 +202,7 @@ def test_fetch_servers_with_health_check(mock_console, mock_progress):
     ]
     f = Mock()
     f.get_servers_with_health.return_value = health_servers
+    f.should_stop.return_value = False
     result = fetch_servers(f, check_health=True)
     assert result == health_servers
     f.get_servers_with_health.assert_called_once()
@@ -246,6 +248,7 @@ def test_interactive_mode_health_check(mock_console, mock_progress):
     """Choice '3' calls get_servers_with_health."""
     health_finder = Mock()
     health_finder.get_servers_with_health.return_value = []
+    health_finder.should_stop.return_value = False
     with patch("v2ray_finder.cli_rich.Prompt") as mock_prompt:
         with patch("v2ray_finder.cli_rich.Confirm") as mock_confirm:
             mock_prompt.ask.side_effect = ["3", "6"]
@@ -255,23 +258,23 @@ def test_interactive_mode_health_check(mock_console, mock_progress):
 
 
 def test_interactive_mode_show_stats(mock_console, finder):
-    """Choice '4' calls show_stats with cached servers and show_health kwarg."""
-    finder._cached_servers = ["vmess://s1"]
+    """Choice '4' calls show_stats with cached_servers (empty when no fetch done)."""
     with patch("v2ray_finder.cli_rich.Prompt") as mock_prompt:
         with patch("v2ray_finder.cli_rich.show_stats") as mock_stats:
             mock_prompt.ask.side_effect = ["4", "6"]
             interactive_mode(finder)
-    mock_stats.assert_called_once_with(["vmess://s1"], show_health=False)
+    # No fetch was done before selecting '4', so cached_servers is []
+    mock_stats.assert_called_once_with([], show_health=False)
 
 
 def test_interactive_mode_save(mock_console, finder):
-    """Choice '5' calls save_servers with cached servers."""
-    finder._cached_servers = ["vmess://s1", "vless://s2"]
+    """Choice '5' calls save_servers with cached_servers (empty when no fetch done)."""
     with patch("v2ray_finder.cli_rich.Prompt") as mock_prompt:
         with patch("v2ray_finder.cli_rich.save_servers") as mock_save:
             mock_prompt.ask.side_effect = ["5", "6"]
             interactive_mode(finder)
-    mock_save.assert_called_once_with(["vmess://s1", "vless://s2"])
+    # No fetch was done before selecting '5', so cached_servers is []
+    mock_save.assert_called_once_with([])
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +297,7 @@ def test_main_output_flag_saves_file(mock_console, mock_progress, tmp_path):
     out_file = str(tmp_path / "out.txt")
     with patch("sys.argv", ["v2ray-finder-rich", "-o", out_file]):
         mock_finder = Mock()
+        mock_finder.should_stop.return_value = False
         with patch(
             "v2ray_finder.cli_rich.fetch_servers",
             return_value=["vmess://s1", "vless://s2"],
@@ -327,6 +331,7 @@ def test_main_output_with_health_check(mock_console, mock_progress, tmp_path):
     with patch("sys.argv", ["v2ray-finder-rich", "-o", out_file, "-c"]):
         mock_finder = Mock()
         mock_finder.get_servers_with_health.return_value = servers
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder):
             main()
     lines = [ln for ln in open(out_file).read().splitlines() if ln]
@@ -337,6 +342,7 @@ def test_main_stats_only_flag(mock_console, mock_progress):
     """main() with --stats-only calls show_stats."""
     with patch("sys.argv", ["v2ray-finder-rich", "--stats-only"]):
         mock_finder = Mock()
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli_rich.fetch_servers", return_value=["vmess://s1"]):
             with patch("v2ray_finder.cli_rich.show_stats") as mock_stats:
                 with patch(
@@ -351,6 +357,7 @@ def test_main_no_servers_exits_1(mock_console, mock_progress):
     """main() with -o exits 1 when fetch_servers returns empty list."""
     with patch("sys.argv", ["v2ray-finder-rich", "-o", "out.txt"]):
         mock_finder = Mock()
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli_rich.fetch_servers", return_value=[]):
             with patch(
                 "v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder
@@ -365,6 +372,7 @@ def test_main_limit_flag_slices_servers(mock_console, mock_progress, tmp_path):
     out_file = str(tmp_path / "limited.txt")
     with patch("sys.argv", ["v2ray-finder-rich", "-o", out_file, "-l", "2"]):
         mock_finder = Mock()
+        mock_finder.should_stop.return_value = False
         all_servers = ["vmess://s1", "vless://s2", "trojan://s3"]
         with patch("v2ray_finder.cli_rich.fetch_servers", return_value=all_servers):
             with patch(
