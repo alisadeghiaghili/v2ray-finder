@@ -299,9 +299,7 @@ def show_stats(servers: List, show_health: bool = False) -> None:
     table.add_column("Percent", justify="right", style="magenta")
 
     total = len(servers)
-    for protocol, count in sorted(
-        protocols.items(), key=lambda x: x[1], reverse=True
-    ):
+    for protocol, count in sorted(protocols.items(), key=lambda x: x[1], reverse=True):
         table.add_row(protocol, str(count), f"{100 * count / total:.1f}%")
     console.print(table)
 
@@ -313,9 +311,7 @@ def show_stats(servers: List, show_health: bool = False) -> None:
 
         healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
         degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(
-            1 for s in servers if s.get("health_status") == "unreachable"
-        )
+        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
         invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
 
         health_table.add_row(
@@ -436,9 +432,7 @@ def interactive_mode(finder: V2RayServerFinder) -> None:
             check_health = choice == "3"
             if check_health:
                 try:
-                    use_search = Confirm.ask(
-                        "Include GitHub search?", default=False
-                    )
+                    use_search = Confirm.ask("Include GitHub search?", default=False)
                 except KeyboardInterrupt:
                     continue
                 console.print(
@@ -616,9 +610,7 @@ Examples:
                 f" servers to [bold cyan]{args.output}[/bold cyan]"
             )
         except OSError as exc:
-            console.print(
-                f"\n[red]\u2717[/red] Failed to save: [bold]{exc}[/bold]"
-            )
+            console.print(f"\n[red]\u2717[/red] Failed to save: [bold]{exc}[/bold]")
             sys.exit(1)
 
 
