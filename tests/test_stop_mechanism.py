@@ -2,7 +2,7 @@
 
 Covers three layers:
   1. core.py  – KeyboardInterrupt caught, partial results returned, should_stop() set.
-  2. cli.py   – StopController wires 'q' → finder.request_stop();
+  2. cli.py   – StopController wires ‘q’ → finder.request_stop();
                  interactive_menu per-operation KI handling.
   3. main()   – non-interactive path exits 130 and saves partial results.
 """
@@ -10,7 +10,7 @@ Covers three layers:
 from __future__ import annotations
 
 import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -182,7 +182,212 @@ class TestHealthPreStop:
 
 
 # ===========================================================================
-# 4. cli.py – StopController
+# 4. core.py – get_servers_with_health (batch stop — new behaviour)
+# ===========================================================================
+
+
+class TestHealthBatchStop:
+    """
+    get_servers_with_health() now processes servers in batches so that
+    should_stop() is checked between every batch and KeyboardInterrupt
+    during a batch is caught and yields partial results.
+    """
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_health_result(config: str) -> MagicMock:
+        h = MagicMock()
+        h.config = config
+        h.protocol = config.split("://")[0]
+        h.status = MagicMock()
+        h.status.value = "healthy"
+        h.latency_ms = 10.0
+        h.quality_score = 80.0
+        h.host = "1.2.3.4"
+        h.port = 443
+        h.error = None
+        h.validation_error = None
+        return h
+
+    def _patch_health_checker(self, finder, servers, ki_on_batch: int | None = None):
+        """
+        Patch HealthChecker so check_servers() returns one mock result per
+        server, but raises KeyboardInterrupt on batch number *ki_on_batch*
+        (1-indexed).  Also patches filter/sort helpers to be transparent.
+        """
+        batch_call = {"n": 0}
+
+        def fake_check(batch):
+            batch_call["n"] += 1
+            if ki_on_batch is not None and batch_call["n"] == ki_on_batch:
+                raise KeyboardInterrupt
+            return [self._make_health_result(s[0]) for s in batch]
+
+        checker_mock = MagicMock()
+        checker_mock.check_servers.side_effect = fake_check
+
+        checker_cls = MagicMock(return_value=checker_mock)
+
+        def passthrough_filter(results, **_):
+            return results
+
+        def passthrough_sort(results, **_):
+            return results
+
+        return (
+            patch(
+                "v2ray_finder.core.V2RayServerFinder.get_all_servers",
+                return_value=servers,
+            ),
+            patch("v2ray_finder.core.HealthChecker", checker_cls),
+            patch("v2ray_finder.core.filter_healthy_servers", side_effect=passthrough_filter),
+            patch("v2ray_finder.core.sort_by_quality", side_effect=passthrough_sort),
+            checker_mock,
+        )
+
+    # ------------------------------------------------------------------
+    # Test: KI during batch returns partial + sets should_stop
+    # ------------------------------------------------------------------
+
+    def test_ki_during_batch_returns_partial(self):
+        """
+        KeyboardInterrupt on batch 2 must return results from batch 1.
+        """
+        finder = _finder()
+        servers = [f"vmess://s{i}" for i in range(6)]
+
+        try:
+            from v2ray_finder.health_checker import HealthChecker  # noqa: F401
+        except ImportError:
+            pytest.skip("health_checker not available")
+
+        batch_call = {"n": 0}
+        health_results_b1 = [self._make_health_result(s) for s in servers[:3]]
+
+        def fake_check(batch):
+            batch_call["n"] += 1
+            if batch_call["n"] == 2:
+                raise KeyboardInterrupt
+            return [self._make_health_result(s[0]) for s in batch]
+
+        checker_mock = MagicMock()
+        checker_mock.check_servers.side_effect = fake_check
+
+        with (
+            patch.object(finder, "get_all_servers", return_value=servers),
+            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+        ):
+            result = finder.get_servers_with_health(
+                check_health=True, health_batch_size=3
+            )
+
+        # Only batch 1 results should be present
+        assert len(result) == 3
+        assert finder.should_stop() is True
+
+    def test_ki_does_not_propagate(self):
+        """KeyboardInterrupt must NOT escape get_servers_with_health()."""
+        finder = _finder()
+        servers = ["vmess://s1", "vmess://s2"]
+
+        try:
+            from v2ray_finder.health_checker import HealthChecker  # noqa: F401
+        except ImportError:
+            pytest.skip("health_checker not available")
+
+        checker_mock = MagicMock()
+        checker_mock.check_servers.side_effect = KeyboardInterrupt
+
+        with (
+            patch.object(finder, "get_all_servers", return_value=servers),
+            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+        ):
+            try:
+                finder.get_servers_with_health(check_health=True)
+            except KeyboardInterrupt:
+                pytest.fail(
+                    "KeyboardInterrupt escaped get_servers_with_health()"
+                )
+
+    def test_should_stop_between_batches_stops_processing(self):
+        """
+        When should_stop() becomes True between batches, no further
+        check_servers() calls are made.
+        """
+        finder = _finder()
+        servers = [f"vmess://s{i}" for i in range(9)]
+
+        try:
+            from v2ray_finder.health_checker import HealthChecker  # noqa: F401
+        except ImportError:
+            pytest.skip("health_checker not available")
+
+        batch_call = {"n": 0}
+
+        def fake_check(batch):
+            batch_call["n"] += 1
+            # After first batch, set stop so the loop halts
+            finder.request_stop()
+            return [self._make_health_result(s[0]) for s in batch]
+
+        checker_mock = MagicMock()
+        checker_mock.check_servers.side_effect = fake_check
+
+        with (
+            patch.object(finder, "get_all_servers", return_value=servers),
+            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+        ):
+            result = finder.get_servers_with_health(
+                check_health=True, health_batch_size=3
+            )
+
+        # check_servers() must have been called exactly once (first batch)
+        assert checker_mock.check_servers.call_count == 1
+        assert len(result) == 3
+
+    def test_custom_batch_size_splits_work(self):
+        """
+        health_batch_size controls how many servers per check_servers() call.
+        With 6 servers and batch_size=2, check_servers() is called 3 times.
+        """
+        finder = _finder()
+        servers = [f"vmess://s{i}" for i in range(6)]
+
+        try:
+            from v2ray_finder.health_checker import HealthChecker  # noqa: F401
+        except ImportError:
+            pytest.skip("health_checker not available")
+
+        checker_mock = MagicMock()
+        checker_mock.check_servers.side_effect = (
+            lambda batch: [self._make_health_result(s[0]) for s in batch]
+        )
+
+        with (
+            patch.object(finder, "get_all_servers", return_value=servers),
+            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+        ):
+            result = finder.get_servers_with_health(
+                check_health=True, health_batch_size=2
+            )
+
+        assert checker_mock.check_servers.call_count == 3
+        assert len(result) == 6
+
+
+# ===========================================================================
+# 5. cli.py – StopController
 # ===========================================================================
 
 
@@ -247,7 +452,7 @@ class TestStopController:
 
 
 # ===========================================================================
-# 5. cli.py – interactive_menu
+# 6. cli.py – interactive_menu
 # ===========================================================================
 
 
@@ -327,7 +532,7 @@ class TestInteractiveMenuStop:
 
 
 # ===========================================================================
-# 6. cli.py – main() non-interactive path
+# 7. cli.py – main() non-interactive path
 # ===========================================================================
 
 
