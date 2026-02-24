@@ -332,6 +332,9 @@ class V2RayServerFinder:
         except AuthenticationError as e:
             logger.error(f"Authentication failed: {e}")
             return Err(e)
+        except GitHubAPIError as e:
+            logger.error(str(e))
+            return Err(e)
         except requests.exceptions.Timeout as e:
             error = TimeoutError(
                 f"Request timed out while searching repositories", url=url, timeout=10.0
