@@ -416,7 +416,9 @@ class V2RayServerFinder:
             config_files = []
             for file in files if isinstance(files, list) else [files]:
                 if self.should_stop():
-                    logger.info(f"Get repo files interrupted after {len(config_files)} files")
+                    logger.info(
+                        f"Get repo files interrupted after {len(config_files)} files"
+                    )
                     break
 
                 if file.get("type") == "file":
@@ -744,7 +746,9 @@ class V2RayServerFinder:
 
         for i, server in enumerate(servers, 1):
             if self.should_stop():
-                logger.info(f"Get servers sorted stopped by user request after {len(server_list)} servers")
+                logger.info(
+                    f"Get servers sorted stopped by user request after {len(server_list)} servers"
+                )
                 break
 
             protocol = server.split("://")[0] if "://" in server else "unknown"
@@ -864,7 +868,7 @@ class V2RayServerFinder:
                         f"{(len(server_tuples) + health_batch_size - 1) // health_batch_size})"
                     )
                     break
-                batch = server_tuples[i: i + health_batch_size]
+                batch = server_tuples[i : i + health_batch_size]
                 batch_results = checker.check_servers(batch)
                 health_results.extend(batch_results)
         except KeyboardInterrupt:
