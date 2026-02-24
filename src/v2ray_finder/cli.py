@@ -85,9 +85,7 @@ def print_stats(servers, show_health: bool = False) -> None:
     if show_health and servers and isinstance(servers[0], dict):
         healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
         degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(
-            1 for s in servers if s.get("health_status") == "unreachable"
-        )
+        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
         invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
 
         print("\nHealth status:")
@@ -234,9 +232,7 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
 
         elif choice == "3":
             try:
-                use_search = (
-                    input("Use GitHub search? (y/n): ").strip().lower() == "y"
-                )
+                use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
             except (KeyboardInterrupt, EOFError):
                 continue
             print("\nFetching and checking server health...")
@@ -280,12 +276,11 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
 
         elif choice == "4":
             try:
-                filename = input(
-                    "Enter filename (default: v2ray_servers.txt): "
-                ).strip() or "v2ray_servers.txt"
-                use_search = (
-                    input("Use GitHub search? (y/n): ").strip().lower() == "y"
+                filename = (
+                    input("Enter filename (default: v2ray_servers.txt): ").strip()
+                    or "v2ray_servers.txt"
                 )
+                use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
                 check_health = (
                     input("Check server health? (y/n): ").strip().lower() == "y"
                 )
@@ -333,9 +328,7 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
 
         elif choice == "5":
             try:
-                use_search = (
-                    input("Use GitHub search? (y/n): ").strip().lower() == "y"
-                )
+                use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
                 check_health = (
                     input("Check server health? (y/n): ").strip().lower() == "y"
                 )
@@ -450,7 +443,9 @@ def main() -> None:
         token = token_from_env
         if not args.quiet:
             print("[i] Using GitHub token from GITHUB_TOKEN environment variable")
-    elif not token and not args.prompt_token and not any([args.output, args.stats_only]):
+    elif (
+        not token and not args.prompt_token and not any([args.output, args.stats_only])
+    ):
         # Offer token prompt only when entering interactive mode
         token = prompt_for_token()
 
@@ -561,9 +556,7 @@ def main() -> None:
 
         rate_info = finder.get_rate_limit_info()
         if rate_info and args.search and not args.quiet:
-            print(
-                f"API calls remaining: {rate_info['remaining']}/{rate_info['limit']}"
-            )
+            print(f"API calls remaining: {rate_info['remaining']}/{rate_info['limit']}")
 
 
 if __name__ == "__main__":
