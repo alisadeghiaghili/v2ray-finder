@@ -22,8 +22,13 @@ def finder():
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_health(config="vmess://test", protocol="vmess", status="healthy",
-                      latency=80.0, quality=95.0):
+def _make_mock_health(
+    config="vmess://test",
+    protocol="vmess",
+    status="healthy",
+    latency=80.0,
+    quality=95.0,
+):
     """Return a mock ServerHealth-like object."""
     h = MagicMock()
     h.config = config
@@ -77,9 +82,7 @@ def test_get_servers_with_health_import_error_falls_back_gracefully(finder):
     """When health_checker cannot be imported the method must fall back to
     returning servers with health_checked=False, not raise.
     """
-    with patch.object(
-        finder, "get_all_servers", return_value=["vmess://s1"]
-    ):
+    with patch.object(finder, "get_all_servers", return_value=["vmess://s1"]):
         with patch.dict(sys.modules, {"v2ray_finder.health_checker": None}):
             result = finder.get_servers_with_health(check_health=True)
 
@@ -133,9 +136,7 @@ def test_get_servers_with_health_min_quality_calls_filter(finder):
     with patch.object(
         finder, "get_all_servers", return_value=["vmess://test"]
     ), patch.dict(sys.modules, {"v2ray_finder.health_checker": hc_mod}):
-        finder.get_servers_with_health(
-            check_health=True, min_quality_score=50.0
-        )
+        finder.get_servers_with_health(check_health=True, min_quality_score=50.0)
 
     hc_mod.filter_healthy_servers.assert_called_once()
 
@@ -168,9 +169,7 @@ def test_save_to_file_with_check_health_writes_configs(finder, tmp_path):
     ]
     output = tmp_path / "out.txt"
 
-    with patch.object(
-        finder, "get_servers_with_health", return_value=health_results
-    ):
+    with patch.object(finder, "get_servers_with_health", return_value=health_results):
         count, filename = finder.save_to_file(
             filename=str(output),
             check_health=True,
@@ -186,16 +185,11 @@ def test_save_to_file_with_check_health_writes_configs(finder, tmp_path):
 def test_save_to_file_with_check_health_respects_limit(finder, tmp_path):
     """limit parameter must slice results even when check_health=True."""
     health_results = [
-        {"config": f"vmess://server-{i}", "health_checked": True}
-        for i in range(10)
+        {"config": f"vmess://server-{i}", "health_checked": True} for i in range(10)
     ]
     output = tmp_path / "out.txt"
 
-    with patch.object(
-        finder, "get_servers_with_health", return_value=health_results
-    ):
-        count, _ = finder.save_to_file(
-            filename=str(output), check_health=True, limit=3
-        )
+    with patch.object(finder, "get_servers_with_health", return_value=health_results):
+        count, _ = finder.save_to_file(filename=str(output), check_health=True, limit=3)
 
     assert count == 3
