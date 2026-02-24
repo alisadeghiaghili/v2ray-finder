@@ -211,45 +211,6 @@ class TestHealthBatchStop:
         h.validation_error = None
         return h
 
-    def _patch_health_checker(self, finder, servers, ki_on_batch: int | None = None):
-        """
-        Patch HealthChecker so check_servers() returns one mock result per
-        server, but raises KeyboardInterrupt on batch number *ki_on_batch*
-        (1-indexed).  Also patches filter/sort helpers to be transparent.
-        """
-        batch_call = {"n": 0}
-
-        def fake_check(batch):
-            batch_call["n"] += 1
-            if ki_on_batch is not None and batch_call["n"] == ki_on_batch:
-                raise KeyboardInterrupt
-            return [self._make_health_result(s[0]) for s in batch]
-
-        checker_mock = MagicMock()
-        checker_mock.check_servers.side_effect = fake_check
-
-        checker_cls = MagicMock(return_value=checker_mock)
-
-        def passthrough_filter(results, **_):
-            return results
-
-        def passthrough_sort(results, **_):
-            return results
-
-        return (
-            patch(
-                "v2ray_finder.core.V2RayServerFinder.get_all_servers",
-                return_value=servers,
-            ),
-            patch("v2ray_finder.core.HealthChecker", checker_cls),
-            patch(
-                "v2ray_finder.core.filter_healthy_servers",
-                side_effect=passthrough_filter,
-            ),
-            patch("v2ray_finder.core.sort_by_quality", side_effect=passthrough_sort),
-            checker_mock,
-        )
-
     # ------------------------------------------------------------------
     # Test: KI during batch returns partial + sets should_stop
     # ------------------------------------------------------------------
@@ -267,7 +228,6 @@ class TestHealthBatchStop:
             pytest.skip("health_checker not available")
 
         batch_call = {"n": 0}
-        health_results_b1 = [self._make_health_result(s) for s in servers[:3]]
 
         def fake_check(batch):
             batch_call["n"] += 1
@@ -280,11 +240,15 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
             patch(
-                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+                "v2ray_finder.health_checker.filter_healthy_servers",
+                side_effect=lambda r, **_: r,
             ),
-            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.health_checker.sort_by_quality",
+                side_effect=lambda r, **_: r,
+            ),
         ):
             result = finder.get_servers_with_health(
                 check_health=True, health_batch_size=3
@@ -309,11 +273,15 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
             patch(
-                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+                "v2ray_finder.health_checker.filter_healthy_servers",
+                side_effect=lambda r, **_: r,
             ),
-            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.health_checker.sort_by_quality",
+                side_effect=lambda r, **_: r,
+            ),
         ):
             try:
                 finder.get_servers_with_health(check_health=True)
@@ -333,10 +301,7 @@ class TestHealthBatchStop:
         except ImportError:
             pytest.skip("health_checker not available")
 
-        batch_call = {"n": 0}
-
         def fake_check(batch):
-            batch_call["n"] += 1
             # After first batch, set stop so the loop halts
             finder.request_stop()
             return [self._make_health_result(s[0]) for s in batch]
@@ -346,11 +311,15 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
             patch(
-                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+                "v2ray_finder.health_checker.filter_healthy_servers",
+                side_effect=lambda r, **_: r,
             ),
-            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.health_checker.sort_by_quality",
+                side_effect=lambda r, **_: r,
+            ),
         ):
             result = finder.get_servers_with_health(
                 check_health=True, health_batch_size=3
@@ -380,11 +349,15 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
+            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
             patch(
-                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+                "v2ray_finder.health_checker.filter_healthy_servers",
+                side_effect=lambda r, **_: r,
             ),
-            patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.health_checker.sort_by_quality",
+                side_effect=lambda r, **_: r,
+            ),
         ):
             result = finder.get_servers_with_health(
                 check_health=True, health_batch_size=2
