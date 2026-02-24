@@ -71,7 +71,7 @@ class V2RayServerFinder:
         self.raise_errors = raise_errors
         self._last_rate_limit_info: Optional[Dict] = None
         self._token_source: str = "none"
-        
+
         # Stop mechanism for graceful interruption
         self._stop_requested = threading.Event()
         self._lock = threading.Lock()
@@ -118,7 +118,7 @@ class V2RayServerFinder:
 
     def should_stop(self) -> bool:
         """Check if stop has been requested.
-        
+
         Returns:
             True if stop was requested, False otherwise
         """
@@ -275,7 +275,7 @@ class V2RayServerFinder:
         if self.should_stop():
             logger.info("Search repos stopped by user request")
             return Ok([])
-            
+
         if keywords is None:
             keywords = ["v2ray", "free", "config"]
 
@@ -311,7 +311,7 @@ class V2RayServerFinder:
                 if self.should_stop():
                     logger.info(f"Search repos interrupted after {len(results)} repos")
                     break
-                    
+
                 results.append(
                     {
                         "name": repo["name"],
@@ -395,7 +395,7 @@ class V2RayServerFinder:
         if self.should_stop():
             logger.info("Get repo files stopped by user request")
             return Ok([])
-            
+
         url = f"{self.BASE_URL}/repos/{repo_full_name}/contents/{path}"
 
         try:
@@ -418,7 +418,7 @@ class V2RayServerFinder:
                 if self.should_stop():
                     logger.info(f"Get repo files interrupted after {len(config_files)} files")
                     break
-                    
+
                 if file.get("type") == "file":
                     name_lower = file["name"].lower()
                     if any(
@@ -494,7 +494,7 @@ class V2RayServerFinder:
             if self.should_stop():
                 logger.info(f"Parse servers interrupted after {len(servers)} servers")
                 break
-                
+
             line = line.strip()
             if any(line.startswith(p) for p in supported_protocols):
                 servers.append(line)
@@ -518,7 +518,7 @@ class V2RayServerFinder:
         if self.should_stop():
             logger.info("Get servers from URL stopped by user request")
             return Ok([])
-            
+
         try:
             response = requests.get(url, timeout=timeout)
             response.raise_for_status()
@@ -572,7 +572,8 @@ class V2RayServerFinder:
             max_repos: Maximum repositories to check per keyword
 
         Returns:
-            Deduplicated list of server configs
+            Deduplicated list of server configs. Returns partial results if the
+            operation is stopped via request_stop() or Ctrl+C.
 
         Note:
             This method uses legacy error handling (returns empty on error) for backward compatibility.
@@ -581,55 +582,76 @@ class V2RayServerFinder:
         if search_keywords is None:
             search_keywords = ["free-v2ray", "v2ray-config"]
 
-        all_servers = []
+        all_servers: List[str] = []
         errors = []
 
-        for keyword in search_keywords:
-            if self.should_stop():
-                logger.info(f"GitHub search stopped by user request after {len(all_servers)} servers")
-                break
-                
-            repos_result = self.search_repos(
-                keywords=[keyword, "v2ray"], max_results=max_repos
-            )
-
-            if repos_result.is_err():
-                errors.append(repos_result.error)
-                if self.raise_errors:
-                    raise repos_result.error
-                continue
-
-            repos = repos_result.unwrap()
-
-            for repo in repos[:max_repos]:
+        try:
+            for keyword in search_keywords:
                 if self.should_stop():
-                    logger.info(f"GitHub search stopped by user request after {len(all_servers)} servers")
+                    logger.info(
+                        "GitHub search stopped by user request after "
+                        f"{len(all_servers)} servers"
+                    )
                     break
-                    
-                files_result = self.get_repo_files(repo["full_name"])
 
-                if files_result.is_err():
-                    errors.append(files_result.error)
+                repos_result = self.search_repos(
+                    keywords=[keyword, "v2ray"], max_results=max_repos
+                )
+
+                if repos_result.is_err():
+                    errors.append(repos_result.error)
                     if self.raise_errors:
-                        raise files_result.error
+                        raise repos_result.error
                     continue
 
-                files = files_result.unwrap()
+                repos = repos_result.unwrap()
 
-                for file in files:
+                for repo in repos[:max_repos]:
                     if self.should_stop():
-                        logger.info(f"GitHub search stopped by user request after {len(all_servers)} servers")
+                        logger.info(
+                            "GitHub search stopped by user request after "
+                            f"{len(all_servers)} servers"
+                        )
                         break
-                        
-                    if file["download_url"]:
-                        servers_result = self.get_servers_from_url(file["download_url"])
 
-                        if servers_result.is_ok():
-                            all_servers.extend(servers_result.unwrap())
-                        else:
-                            errors.append(servers_result.error)
-                            if self.raise_errors:
-                                raise servers_result.error
+                    files_result = self.get_repo_files(repo["full_name"])
+
+                    if files_result.is_err():
+                        errors.append(files_result.error)
+                        if self.raise_errors:
+                            raise files_result.error
+                        continue
+
+                    files = files_result.unwrap()
+
+                    for file in files:
+                        if self.should_stop():
+                            logger.info(
+                                "GitHub search stopped by user request after "
+                                f"{len(all_servers)} servers"
+                            )
+                            break
+
+                        if file["download_url"]:
+                            servers_result = self.get_servers_from_url(
+                                file["download_url"]
+                            )
+
+                            if servers_result.is_ok():
+                                all_servers.extend(servers_result.unwrap())
+                            else:
+                                errors.append(servers_result.error)
+                                if self.raise_errors:
+                                    raise servers_result.error
+
+        except KeyboardInterrupt:
+            # Ctrl+C pressed during a blocking requests.get() call.
+            # Partial all_servers list is captured here and returned.
+            logger.info(
+                "GitHub search interrupted via Ctrl+C — "
+                f"returning {len(all_servers)} partial results"
+            )
+            self.request_stop()
 
         if errors:
             logger.warning(f"Encountered {len(errors)} errors during GitHub search")
@@ -643,27 +665,40 @@ class V2RayServerFinder:
         Fetch servers from curated known sources.
 
         Returns:
-            Deduplicated list of server configs from known sources
+            Deduplicated list of server configs from known sources. Returns
+            partial results if the operation is stopped via request_stop() or Ctrl+C.
 
         Note:
             This method uses legacy error handling for backward compatibility.
         """
-        all_servers = []
+        all_servers: List[str] = []
         errors = []
 
-        for url in self.DIRECT_SOURCES:
-            if self.should_stop():
-                logger.info(f"Known sources fetch stopped by user request after {len(all_servers)} servers")
-                break
-                
-            result = self.get_servers_from_url(url)
+        try:
+            for url in self.DIRECT_SOURCES:
+                if self.should_stop():
+                    logger.info(
+                        "Known sources fetch stopped by user request after "
+                        f"{len(all_servers)} servers"
+                    )
+                    break
 
-            if result.is_ok():
-                all_servers.extend(result.unwrap())
-            else:
-                errors.append(result.error)
-                if self.raise_errors:
-                    raise result.error
+                result = self.get_servers_from_url(url)
+
+                if result.is_ok():
+                    all_servers.extend(result.unwrap())
+                else:
+                    errors.append(result.error)
+                    if self.raise_errors:
+                        raise result.error
+
+        except KeyboardInterrupt:
+            # Ctrl+C pressed during a blocking requests.get() call.
+            logger.info(
+                "Known sources fetch interrupted via Ctrl+C — "
+                f"returning {len(all_servers)} partial results"
+            )
+            self.request_stop()
 
         if errors:
             logger.warning(
@@ -711,7 +746,7 @@ class V2RayServerFinder:
             if self.should_stop():
                 logger.info(f"Get servers sorted stopped by user request after {len(server_list)} servers")
                 break
-                
+
             protocol = server.split("://")[0] if "://" in server else "unknown"
             server_list.append(
                 {
@@ -735,6 +770,7 @@ class V2RayServerFinder:
         concurrent_checks: int = 50,
         min_quality_score: float = 0.0,
         filter_unhealthy: bool = False,
+        health_batch_size: int = 50,
     ) -> List[Dict]:
         """
         Get servers with optional health checking.
@@ -746,6 +782,7 @@ class V2RayServerFinder:
             concurrent_checks: Max concurrent health checks
             min_quality_score: Minimum quality score (0-100) to include
             filter_unhealthy: Whether to exclude unhealthy servers
+            health_batch_size: Servers per health-check batch (enables stop between batches)
 
         Returns:
             List of server dictionaries with health information
@@ -753,7 +790,7 @@ class V2RayServerFinder:
         servers = self.get_all_servers(use_github_search=use_github_search)
 
         if self.should_stop():
-            logger.info("Health check stopped by user request")
+            logger.info("Health check stopped by user request before checking")
             return [
                 {
                     "config": server,
@@ -806,19 +843,37 @@ class V2RayServerFinder:
             for server in servers
         ]
 
-        # Perform health checks
-        logger.info(f"Checking health of {len(server_tuples)} servers...")
         checker = HealthChecker(
             timeout=health_timeout, concurrent_limit=concurrent_checks
         )
-        
-        # Pass stop callback to health checker if it supports it
-        if hasattr(checker, 'set_stop_callback'):
-            checker.set_stop_callback(self.should_stop)
-            
-        health_results = checker.check_servers(server_tuples)
 
-        # Filter if requested
+        # Batch health checking so stop requests are honoured between batches.
+        # A single checker.check_servers(all) call would block until all N servers
+        # are tested with no opportunity to cancel mid-way.
+        logger.info(
+            f"Checking health of {len(server_tuples)} servers "
+            f"(batch_size={health_batch_size})..."
+        )
+        health_results = []
+        try:
+            for i in range(0, len(server_tuples), health_batch_size):
+                if self.should_stop():
+                    logger.info(
+                        f"Health check stopped by user after {len(health_results)} servers "
+                        f"(batch {i // health_batch_size + 1}/"
+                        f"{(len(server_tuples) + health_batch_size - 1) // health_batch_size})"
+                    )
+                    break
+                batch = server_tuples[i: i + health_batch_size]
+                batch_results = checker.check_servers(batch)
+                health_results.extend(batch_results)
+        except KeyboardInterrupt:
+            logger.info(
+                f"Health check interrupted via Ctrl+C after {len(health_results)} servers"
+            )
+            self.request_stop()
+
+        # Filter and sort on whatever results we have (full or partial)
         if filter_unhealthy or min_quality_score > 0:
             health_results = filter_healthy_servers(
                 health_results,
@@ -826,16 +881,15 @@ class V2RayServerFinder:
                 exclude_unreachable=filter_unhealthy,
             )
 
-        # Sort by quality
         health_results = sort_by_quality(health_results, descending=True)
 
         # Convert to dict format
         result_list = []
         for health in health_results:
-            if self.should_stop():
-                logger.info(f"Health results conversion stopped by user request after {len(result_list)} servers")
-                break
-                
+            if self.should_stop() and not result_list:
+                # Only skip conversion if we haven't started yet; once started
+                # finish converting so the caller always gets a usable list.
+                pass
             result_list.append(
                 {
                     "config": health.config,
