@@ -110,7 +110,7 @@ def test_get_servers_with_health_full_flow_returns_formatted_results(finder):
     r = result[0]
     assert r["config"] == "vmess://test"
     assert r["health_checked"] is True
-    assert r["status"] == "healthy"
+    assert r["health_status"] == "healthy"
     assert r["latency_ms"] == 80.0
     assert r["quality_score"] == 95.0
 
