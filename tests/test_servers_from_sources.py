@@ -130,9 +130,7 @@ def test_get_servers_from_github_happy_path(finder):
 
     with patch.object(finder, "search_repos", return_value=Ok(repos)), patch.object(
         finder, "get_repo_files", return_value=Ok(files)
-    ), patch.object(
-        finder, "get_servers_from_url", return_value=Ok(servers_found)
-    ):
+    ), patch.object(finder, "get_servers_from_url", return_value=Ok(servers_found)):
         result = finder.get_servers_from_github(search_keywords=["v2ray"])
 
     assert "vmess://config1" in result

@@ -116,12 +116,21 @@ def test_get_repo_files_success_filters_config_files(finder):
     mock_resp.status_code = 200
     mock_resp.headers = {}
     mock_resp.json.return_value = [
-        {"type": "file", "name": "servers.txt", "path": "servers.txt",
-         "download_url": "https://example.com/servers.txt", "size": 1024},
-        {"type": "file", "name": "README.md", "path": "README.md",
-         "download_url": "https://example.com/README.md", "size": 512},
-        {"type": "dir",  "name": "sub", "path": "sub",
-         "download_url": None, "size": 0},
+        {
+            "type": "file",
+            "name": "servers.txt",
+            "path": "servers.txt",
+            "download_url": "https://example.com/servers.txt",
+            "size": 1024,
+        },
+        {
+            "type": "file",
+            "name": "README.md",
+            "path": "README.md",
+            "download_url": "https://example.com/README.md",
+            "size": 512,
+        },
+        {"type": "dir", "name": "sub", "path": "sub", "download_url": None, "size": 0},
     ]
 
     with patch("requests.get", return_value=mock_resp):
