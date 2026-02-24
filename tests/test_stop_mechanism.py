@@ -2,7 +2,7 @@
 
 Covers three layers:
   1. core.py  – KeyboardInterrupt caught, partial results returned, should_stop() set.
-  2. cli.py   – StopController wires ‘q’ → finder.request_stop();
+  2. cli.py   – StopController wires 'q' → finder.request_stop();
                  interactive_menu per-operation KI handling.
   3. main()   – non-interactive path exits 130 and saves partial results.
 """
@@ -17,7 +17,6 @@ import pytest
 from v2ray_finder.cli import StopController, interactive_menu, main
 from v2ray_finder.core import V2RayServerFinder
 from v2ray_finder.result import Ok
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -243,7 +242,10 @@ class TestHealthBatchStop:
                 return_value=servers,
             ),
             patch("v2ray_finder.core.HealthChecker", checker_cls),
-            patch("v2ray_finder.core.filter_healthy_servers", side_effect=passthrough_filter),
+            patch(
+                "v2ray_finder.core.filter_healthy_servers",
+                side_effect=passthrough_filter,
+            ),
             patch("v2ray_finder.core.sort_by_quality", side_effect=passthrough_sort),
             checker_mock,
         )
@@ -279,7 +281,9 @@ class TestHealthBatchStop:
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
             patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
-            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+            ),
             patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
         ):
             result = finder.get_servers_with_health(
@@ -306,15 +310,15 @@ class TestHealthBatchStop:
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
             patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
-            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+            ),
             patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
         ):
             try:
                 finder.get_servers_with_health(check_health=True)
             except KeyboardInterrupt:
-                pytest.fail(
-                    "KeyboardInterrupt escaped get_servers_with_health()"
-                )
+                pytest.fail("KeyboardInterrupt escaped get_servers_with_health()")
 
     def test_should_stop_between_batches_stops_processing(self):
         """
@@ -343,7 +347,9 @@ class TestHealthBatchStop:
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
             patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
-            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+            ),
             patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
         ):
             result = finder.get_servers_with_health(
@@ -368,14 +374,16 @@ class TestHealthBatchStop:
             pytest.skip("health_checker not available")
 
         checker_mock = MagicMock()
-        checker_mock.check_servers.side_effect = (
-            lambda batch: [self._make_health_result(s[0]) for s in batch]
-        )
+        checker_mock.check_servers.side_effect = lambda batch: [
+            self._make_health_result(s[0]) for s in batch
+        ]
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
             patch("v2ray_finder.core.HealthChecker", return_value=checker_mock),
-            patch("v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r),
+            patch(
+                "v2ray_finder.core.filter_healthy_servers", side_effect=lambda r, **_: r
+            ),
             patch("v2ray_finder.core.sort_by_quality", side_effect=lambda r, **_: r),
         ):
             result = finder.get_servers_with_health(
