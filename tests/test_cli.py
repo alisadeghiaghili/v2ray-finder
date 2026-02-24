@@ -77,7 +77,8 @@ def test_main_enters_interactive_mode():
         mock_finder = Mock()
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
             with patch("v2ray_finder.cli.interactive_menu") as mock_menu:
-                main()
+                with patch("v2ray_finder.cli.prompt_for_token", return_value=None):
+                    main()
         mock_menu.assert_called_once_with(mock_finder)
 
 
@@ -92,8 +93,10 @@ def test_main_stats_only(capsys):
         mock_finder = Mock()
         mock_finder.get_all_servers.return_value = ["vmess://s1", "vless://s2"]
         mock_finder.get_rate_limit_info.return_value = None
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     assert "Total servers: 2" in capsys.readouterr().out
 
 
@@ -106,8 +109,10 @@ def test_main_stats_with_search_shows_rate_info(capsys):
             "remaining": 4999,
             "limit": 5000,
         }
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     assert "API calls remaining" in capsys.readouterr().out
 
 
@@ -126,8 +131,10 @@ def test_main_stats_with_health_check(capsys):
         mock_finder = Mock()
         mock_finder.get_servers_with_health.return_value = servers
         mock_finder.get_rate_limit_info.return_value = None
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     out = capsys.readouterr().out
     assert "Total servers: 1" in out
     assert "Health status" in out
@@ -149,8 +156,10 @@ def test_main_output_file(tmp_path, capsys):
             "trojan://s3",
         ]
         mock_finder.get_rate_limit_info.return_value = None
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     out = capsys.readouterr().out
     assert "Saved 3 servers" in out
     lines = [ln for ln in open(out_file).read().splitlines() if ln]
@@ -180,8 +189,10 @@ def test_main_output_with_health_check(tmp_path, capsys):
         mock_finder = Mock()
         mock_finder.get_servers_with_health.return_value = servers
         mock_finder.get_rate_limit_info.return_value = None
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     lines = [ln for ln in open(out_file).read().splitlines() if ln]
     assert lines == ["vmess://s1", "vless://s2"]
 
@@ -196,8 +207,10 @@ def test_main_output_with_search_shows_rate_info(tmp_path, capsys):
             "remaining": 4999,
             "limit": 5000,
         }
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     assert "API calls remaining" in capsys.readouterr().out
 
 
@@ -212,8 +225,10 @@ def test_main_quiet_suppresses_fetch_message(capsys):
         mock_finder = Mock()
         mock_finder.get_all_servers.return_value = []
         mock_finder.get_rate_limit_info.return_value = None
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     assert "Fetching servers" not in capsys.readouterr().out
 
 
@@ -224,8 +239,10 @@ def test_main_token_flag_prints_security_warning(capsys):
         mock_finder = Mock()
         mock_finder.get_all_servers.return_value = []
         mock_finder.get_rate_limit_info.return_value = None
+        mock_finder.should_stop.return_value = False
         with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-            main()
+            with patch("v2ray_finder.cli.StopController"):
+                main()
     captured = capsys.readouterr()
     assert "WARNING" in captured.err
     assert "insecure" in captured.err
@@ -239,8 +256,10 @@ def test_main_env_token_prints_info(capsys):
             mock_finder = Mock()
             mock_finder.get_all_servers.return_value = []
             mock_finder.get_rate_limit_info.return_value = None
+            mock_finder.should_stop.return_value = False
             with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
-                main()
+                with patch("v2ray_finder.cli.StopController"):
+                    main()
     assert "GITHUB_TOKEN" in capsys.readouterr().out
 
 
