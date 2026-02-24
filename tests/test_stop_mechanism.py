@@ -192,10 +192,6 @@ class TestHealthBatchStop:
     during a batch is caught and yields partial results.
     """
 
-    # ------------------------------------------------------------------
-    # Shared helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _make_health_result(config: str) -> MagicMock:
         h = MagicMock()
@@ -210,10 +206,6 @@ class TestHealthBatchStop:
         h.error = None
         h.validation_error = None
         return h
-
-    # ------------------------------------------------------------------
-    # Test: KI during batch returns partial + sets should_stop
-    # ------------------------------------------------------------------
 
     def test_ki_during_batch_returns_partial(self):
         """
@@ -240,7 +232,10 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
+            patch(
+                "v2ray_finder.health_checker.HealthChecker",
+                return_value=checker_mock,
+            ),
             patch(
                 "v2ray_finder.health_checker.filter_healthy_servers",
                 side_effect=lambda r, **_: r,
@@ -254,7 +249,6 @@ class TestHealthBatchStop:
                 check_health=True, health_batch_size=3
             )
 
-        # Only batch 1 results should be present
         assert len(result) == 3
         assert finder.should_stop() is True
 
@@ -273,7 +267,10 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
+            patch(
+                "v2ray_finder.health_checker.HealthChecker",
+                return_value=checker_mock,
+            ),
             patch(
                 "v2ray_finder.health_checker.filter_healthy_servers",
                 side_effect=lambda r, **_: r,
@@ -302,7 +299,6 @@ class TestHealthBatchStop:
             pytest.skip("health_checker not available")
 
         def fake_check(batch):
-            # After first batch, set stop so the loop halts
             finder.request_stop()
             return [self._make_health_result(s[0]) for s in batch]
 
@@ -311,7 +307,10 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
+            patch(
+                "v2ray_finder.health_checker.HealthChecker",
+                return_value=checker_mock,
+            ),
             patch(
                 "v2ray_finder.health_checker.filter_healthy_servers",
                 side_effect=lambda r, **_: r,
@@ -325,7 +324,6 @@ class TestHealthBatchStop:
                 check_health=True, health_batch_size=3
             )
 
-        # check_servers() must have been called exactly once (first batch)
         assert checker_mock.check_servers.call_count == 1
         assert len(result) == 3
 
@@ -349,7 +347,10 @@ class TestHealthBatchStop:
 
         with (
             patch.object(finder, "get_all_servers", return_value=servers),
-            patch("v2ray_finder.health_checker.HealthChecker", return_value=checker_mock),
+            patch(
+                "v2ray_finder.health_checker.HealthChecker",
+                return_value=checker_mock,
+            ),
             patch(
                 "v2ray_finder.health_checker.filter_healthy_servers",
                 side_effect=lambda r, **_: r,
@@ -403,7 +404,6 @@ class TestStopController:
         finder = _finder()
         ctrl = StopController(finder)
 
-        # 'x' then EOFError to end the loop
         with patch("builtins.input", side_effect=["x", EOFError]):
             ctrl._active.set()
             t = threading.Thread(target=ctrl._listen, daemon=True)
@@ -496,8 +496,8 @@ class TestInteractiveMenuStop:
         partial = ["vmess://p1", "vmess://p2"]
 
         def stopped_fetch(**_):
-            finder.request_stop()  # core sets should_stop internally
-            return partial  # but still returns partial data
+            finder.request_stop()
+            return partial
 
         with (
             patch.object(finder, "get_all_servers", side_effect=stopped_fetch),
