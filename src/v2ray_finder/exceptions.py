@@ -100,6 +100,7 @@ class GitHubAPIError(V2RayFinderError):
         error_type: ErrorType = ErrorType.GITHUB_API_ERROR,
         **kwargs,
     ):
+        self.status_code = status_code
         details = {"status_code": status_code} if status_code else {}
         details.update(kwargs)
         super().__init__(message, error_type, details)
