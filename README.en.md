@@ -19,19 +19,32 @@ The goal is to give you a clean, deduplicated list of `vmess://`, `vless://`, `t
 
 ---
 
-## 🚀 What's New in v0.2.0
+## 🚀 What's New in v0.2.1
 
-### 🎉 Major Performance & Reliability Release!
+### 🐛 Ctrl+C & Graceful Stop — Complete Overhaul
+
+⌨️ **Ctrl+C now works everywhere** — all fetch layers catch KeyboardInterrupt and save partial results  
+🔒 **Thread-safe StopController** — `threading.Event` replaces bare boolean flag  
+🏥 **Batch health checking** — `health_batch_size` param, stop checked between every batch  
+🧪 **Full test coverage** for stop mechanism across CLI, Rich CLI, and core  
+🔧 **Python 3.8 compat fixes** — `ExitStack` replaces parenthesized `with` syntax  
+📦 **Windows EXE builds** — `cli_entry.py` and `cli_rich_entry.py` added for PyInstaller  
+
+> See full details in [📋 CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## 🚀 v0.2.0 — Major Performance & Reliability Release
 
 ⚡ **Async HTTP Fetching** — 10-50x faster concurrent downloads  
 💾 **Smart Caching** — 80-95% fewer GitHub API calls  
 🛡️ **Enhanced Error Handling** — Result type + custom exception hierarchy  
 🔒 **Secure Token Handling** — Environment variable support + `from_env()`  
-🧪 **70%+ Test Coverage** — Tested on Python 3.8–3.12, Linux & Windows  
-📈 **Rate Limit Tracking** — Monitor GitHub API usage in real time  
-🏥 **Health Checking** — TCP connectivity, latency, and quality scoring  
-
-> Full details in [📋 CHANGELOG.md](CHANGELOG.md)
+🧪 **78% Test Coverage** — Comprehensive test suite across Python 3.8–3.12  
+📈 **Rate Limit Tracking** — Monitor GitHub API usage  
+🏥 **Health Checking** — TCP connectivity, latency measurement, quality scoring  
+⌨️ **Interactive Token Prompt** — Secure masked input with `--prompt-token`  
+⛔ **Graceful Interruption** — Press Ctrl+C to save partial results  
 
 ---
 
@@ -50,12 +63,15 @@ The goal is to give you a clean, deduplicated list of `vmess://`, `vless://`, `t
 - 💾 Smart caching: 80-95% fewer API calls (memory or disk, configurable TTL)
 - 🎯 Quality scoring: 0–100 score based on latency thresholds
 - 🔄 Retry logic: exponential backoff with configurable max retries
+- ⛔ Graceful interruption: Ctrl+C saves partial results before exit
 
 ### Developer Experience
 - 🛡️ `Result[T, E]` type for explicit error handling
 - 📈 `get_rate_limit_info()` for API monitoring
 - 🔒 Token validation, sanitization, and security warnings
-- ✅ CI matrix: Python 3.8–3.12 × Linux + Windows
+- ⌨️ Interactive token prompt with masked input
+- 🧪 78% test coverage across Linux, macOS, and Windows
+- ✅ CI/CD: Automated testing and deployment
 
 ---
 
@@ -106,6 +122,8 @@ pip install -e ".[all,dev]"
 
 **Never** pass tokens directly in code or CLI arguments. They can be exposed via process listings, shell history, logs, and tracebacks.
 
+### Method 1: Environment Variable (Recommended)
+
 ```bash
 # Recommended: environment variable
 export GITHUB_TOKEN="ghp_your_token_here"
@@ -125,11 +143,63 @@ finder = V2RayServerFinder()
 finder = V2RayServerFinder.from_env()
 ```
 
+### Method 2: Interactive Prompt (New! ✨)
+
+```bash
+# Secure masked input
+v2ray-finder --prompt-token -s -o servers.txt
+v2ray-finder-rich --prompt-token
+
+# In interactive mode (no args), you'll be prompted automatically
+v2ray-finder-rich
+# → "Do you want to provide a GitHub token? (y/n)"
+```
+
 **Rate Limits:**
 - Without token: 60 requests/hour
 - With token: 5000 requests/hour
 
 Generate a token at [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens) with `public_repo` scope.
+
+> ⚠️ **Security Note:** Never use `-t` flag for tokens (insecure). Use env var or `--prompt-token` instead.
+
+---
+
+## ⛔ Graceful Interruption (New! ✨)
+
+**Press Ctrl+C at any time** during fetch operations to:
+- Stop immediately without data loss
+- Save all servers collected so far
+- Display statistics for partial results
+- Exit cleanly with code `130`
+
+```bash
+v2ray-finder -s -o servers.txt
+# ... fetching ...
+# Press Ctrl+C
+
+[!] Interrupted by user. Saving partial results...
+[✓] Saved 47 servers to v2ray_servers_partial.txt
+
+Total servers: 47
+By protocol:
+  vmess: 23
+  vless: 15
+  trojan: 9
+```
+
+**Rich CLI** version:
+
+```bash
+v2ray-finder-rich -s
+# Press Ctrl+C during fetch
+
+⚠ Interrupted by user
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
+✓ Saved 47 servers to v2ray_servers_partial.txt
+```
+
+> 📖 **See detailed guide:** [docs/INTERRUPTION_GUIDE.md](docs/INTERRUPTION_GUIDE.md)
 
 ---
 
@@ -252,16 +322,28 @@ v2ray-finder                           # Interactive TUI
 v2ray-finder -o servers.txt            # Quick fetch & save
 v2ray-finder -s -l 200 -o servers.txt  # GitHub search + limit
 v2ray-finder --stats-only              # Statistics only
+v2ray-finder --prompt-token -s         # Secure token input
 ```
 
-### Rich CLI
+**With health checking:**
+
+```bash
+v2ray-finder -c --min-quality 60 -o healthy_servers.txt
+```
+
+### Rich CLI (Recommended)
 
 ```bash
 pip install "v2ray-finder[cli-rich]"
-v2ray-finder-rich
+v2ray-finder-rich                      # Beautiful Rich TUI
+v2ray-finder-rich --prompt-token       # With secure token prompt
 ```
 
-Features: colored panels, progress bars, interactive statistics, validated prompts.
+**Interactive mode features:**
+- Token prompt on first run (if not in env)
+- Press Ctrl+C during fetch → saves partial results
+- Visual progress bars and spinners
+- Color-coded health status
 
 ---
 
@@ -273,6 +355,41 @@ v2ray-finder-gui
 ```
 
 Features: token field, GitHub search toggle, limit configuration, fetch & display, save to file, copy selected, protocol statistics.
+
+---
+
+## 🛠️ Advanced Usage
+
+### Interruption in Scripts
+
+```bash
+#!/bin/bash
+
+v2ray-finder -s -o servers.txt
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    echo "Success!"
+    # Process servers.txt
+elif [ $exit_code -eq 130 ]; then
+    echo "Interrupted - using partial results"
+    mv v2ray_servers_partial.txt servers.txt
+else
+    echo "Error occurred"
+    exit 1
+fi
+```
+
+### CI/CD with Timeout
+
+```bash
+# Timeout after 2 minutes, use partial results
+timeout 120 v2ray-finder -s -o servers.txt || {
+    if [ $? -eq 124 ]; then
+        mv v2ray_servers_partial.txt servers.txt
+    fi
+}
+```
 
 ---
 
@@ -300,7 +417,7 @@ pip install -e ".[dev]"
 pytest tests/ --cov=v2ray_finder --cov-report=html
 ```
 
-**Current test coverage: 70%+** across Python 3.8–3.12, Linux & Windows.
+**Current test coverage: 78%** across Python 3.8–3.12, Linux, macOS & Windows.
 
 ---
 
@@ -318,6 +435,7 @@ Free to use, modify, and redistribute.
 - [Issues](https://github.com/alisadeghiaghili/v2ray-finder/issues)
 - [Discussions](https://github.com/alisadeghiaghili/v2ray-finder/discussions)
 - [CHANGELOG](CHANGELOG.md)
+- [Interruption Guide](docs/INTERRUPTION_GUIDE.md)
 
 ---
 
