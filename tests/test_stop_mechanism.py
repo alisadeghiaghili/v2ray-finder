@@ -142,9 +142,7 @@ class TestGitHubSearchInterrupt:
 
         with patch.object(finder, "search_repos", return_value=_ok(repos)):
             with patch.object(finder, "get_repo_files", return_value=_ok(files)):
-                with patch.object(
-                    finder, "get_servers_from_url", side_effect=url_side
-                ):
+                with patch.object(finder, "get_servers_from_url", side_effect=url_side):
                     result = finder.get_servers_from_github(search_keywords=["kw"])
 
         assert "vmess://first" in result
@@ -501,9 +499,7 @@ class TestInteractiveMenuStop:
                     try:
                         interactive_menu(finder)
                     except KeyboardInterrupt:
-                        pytest.fail(
-                            "KeyboardInterrupt escaped interactive_menu()"
-                        )
+                        pytest.fail("KeyboardInterrupt escaped interactive_menu()")
 
     def test_reset_stop_called_before_option_1(self):
         """reset_stop() must be called before every fetch so a prior stop
