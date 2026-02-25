@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "v2ray-finder"
-version = "0.2.0"
+version = "0.2.1"
 description = "Search and collect V2Ray servers from GitHub repositories"
 readme = "README.md"
 authors = [
