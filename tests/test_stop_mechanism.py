@@ -10,7 +10,8 @@ Covers three layers:
 from __future__ import annotations
 
 import threading
-from unittest.mock import MagicMock, call, patch
+from contextlib import ExitStack
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,7 +28,7 @@ def _finder() -> V2RayServerFinder:
     return V2RayServerFinder(token=None)
 
 
-def _ok(servers: list[str]) -> MagicMock:
+def _ok(servers: list) -> MagicMock:
     """Return a mock that looks like Ok(servers)."""
     m = MagicMock()
     m.is_ok.return_value = True
@@ -131,7 +132,7 @@ class TestGitHubSearchInterrupt:
             {"name": "b.txt", "download_url": "http://x/b"},
         ]
 
-        call_count: dict[str, int] = {"n": 0}
+        call_count = {"n": 0}
 
         def url_side(url, **_):
             call_count["n"] += 1
@@ -139,12 +140,12 @@ class TestGitHubSearchInterrupt:
                 return Ok(["vmess://first"])
             raise KeyboardInterrupt
 
-        with (
-            patch.object(finder, "search_repos", return_value=_ok(repos)),
-            patch.object(finder, "get_repo_files", return_value=_ok(files)),
-            patch.object(finder, "get_servers_from_url", side_effect=url_side),
-        ):
-            result = finder.get_servers_from_github(search_keywords=["kw"])
+        with patch.object(finder, "search_repos", return_value=_ok(repos)):
+            with patch.object(finder, "get_repo_files", return_value=_ok(files)):
+                with patch.object(
+                    finder, "get_servers_from_url", side_effect=url_side
+                ):
+                    result = finder.get_servers_from_github(search_keywords=["kw"])
 
         assert "vmess://first" in result
         assert finder.should_stop() is True
@@ -192,6 +193,10 @@ class TestHealthBatchStop:
     during a batch is caught and yields partial results.
     """
 
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _make_health_result(config: str) -> MagicMock:
         h = MagicMock()
@@ -207,12 +212,16 @@ class TestHealthBatchStop:
         h.validation_error = None
         return h
 
+    # ------------------------------------------------------------------
+    # Test: KI during batch returns partial + sets should_stop
+    # ------------------------------------------------------------------
+
     def test_ki_during_batch_returns_partial(self):
         """
         KeyboardInterrupt on batch 2 must return results from batch 1.
         """
         finder = _finder()
-        servers = [f"vmess://s{i}" for i in range(6)]
+        servers = ["vmess://s{}".format(i) for i in range(6)]
 
         try:
             from v2ray_finder.health_checker import HealthChecker  # noqa: F401
@@ -230,21 +239,28 @@ class TestHealthBatchStop:
         checker_mock = MagicMock()
         checker_mock.check_servers.side_effect = fake_check
 
-        with (
-            patch.object(finder, "get_all_servers", return_value=servers),
-            patch(
-                "v2ray_finder.health_checker.HealthChecker",
-                return_value=checker_mock,
-            ),
-            patch(
-                "v2ray_finder.health_checker.filter_healthy_servers",
-                side_effect=lambda r, **_: r,
-            ),
-            patch(
-                "v2ray_finder.health_checker.sort_by_quality",
-                side_effect=lambda r, **_: r,
-            ),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(finder, "get_all_servers", return_value=servers)
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.HealthChecker",
+                    return_value=checker_mock,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.filter_healthy_servers",
+                    side_effect=lambda r, **_: r,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.sort_by_quality",
+                    side_effect=lambda r, **_: r,
+                )
+            )
             result = finder.get_servers_with_health(
                 check_health=True, health_batch_size=3
             )
@@ -265,21 +281,28 @@ class TestHealthBatchStop:
         checker_mock = MagicMock()
         checker_mock.check_servers.side_effect = KeyboardInterrupt
 
-        with (
-            patch.object(finder, "get_all_servers", return_value=servers),
-            patch(
-                "v2ray_finder.health_checker.HealthChecker",
-                return_value=checker_mock,
-            ),
-            patch(
-                "v2ray_finder.health_checker.filter_healthy_servers",
-                side_effect=lambda r, **_: r,
-            ),
-            patch(
-                "v2ray_finder.health_checker.sort_by_quality",
-                side_effect=lambda r, **_: r,
-            ),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(finder, "get_all_servers", return_value=servers)
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.HealthChecker",
+                    return_value=checker_mock,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.filter_healthy_servers",
+                    side_effect=lambda r, **_: r,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.sort_by_quality",
+                    side_effect=lambda r, **_: r,
+                )
+            )
             try:
                 finder.get_servers_with_health(check_health=True)
             except KeyboardInterrupt:
@@ -291,7 +314,7 @@ class TestHealthBatchStop:
         check_servers() calls are made.
         """
         finder = _finder()
-        servers = [f"vmess://s{i}" for i in range(9)]
+        servers = ["vmess://s{}".format(i) for i in range(9)]
 
         try:
             from v2ray_finder.health_checker import HealthChecker  # noqa: F401
@@ -305,21 +328,28 @@ class TestHealthBatchStop:
         checker_mock = MagicMock()
         checker_mock.check_servers.side_effect = fake_check
 
-        with (
-            patch.object(finder, "get_all_servers", return_value=servers),
-            patch(
-                "v2ray_finder.health_checker.HealthChecker",
-                return_value=checker_mock,
-            ),
-            patch(
-                "v2ray_finder.health_checker.filter_healthy_servers",
-                side_effect=lambda r, **_: r,
-            ),
-            patch(
-                "v2ray_finder.health_checker.sort_by_quality",
-                side_effect=lambda r, **_: r,
-            ),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(finder, "get_all_servers", return_value=servers)
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.HealthChecker",
+                    return_value=checker_mock,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.filter_healthy_servers",
+                    side_effect=lambda r, **_: r,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.sort_by_quality",
+                    side_effect=lambda r, **_: r,
+                )
+            )
             result = finder.get_servers_with_health(
                 check_health=True, health_batch_size=3
             )
@@ -333,7 +363,7 @@ class TestHealthBatchStop:
         With 6 servers and batch_size=2, check_servers() is called 3 times.
         """
         finder = _finder()
-        servers = [f"vmess://s{i}" for i in range(6)]
+        servers = ["vmess://s{}".format(i) for i in range(6)]
 
         try:
             from v2ray_finder.health_checker import HealthChecker  # noqa: F401
@@ -345,21 +375,28 @@ class TestHealthBatchStop:
             self._make_health_result(s[0]) for s in batch
         ]
 
-        with (
-            patch.object(finder, "get_all_servers", return_value=servers),
-            patch(
-                "v2ray_finder.health_checker.HealthChecker",
-                return_value=checker_mock,
-            ),
-            patch(
-                "v2ray_finder.health_checker.filter_healthy_servers",
-                side_effect=lambda r, **_: r,
-            ),
-            patch(
-                "v2ray_finder.health_checker.sort_by_quality",
-                side_effect=lambda r, **_: r,
-            ),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(finder, "get_all_servers", return_value=servers)
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.HealthChecker",
+                    return_value=checker_mock,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.filter_healthy_servers",
+                    side_effect=lambda r, **_: r,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "v2ray_finder.health_checker.sort_by_quality",
+                    side_effect=lambda r, **_: r,
+                )
+            )
             result = finder.get_servers_with_health(
                 check_health=True, health_batch_size=2
             )
@@ -392,11 +429,12 @@ class TestStopController:
         finder = _finder()
         ctrl = StopController(finder)
 
-        with patch("builtins.input", side_effect=["q"]), patch("builtins.print"):
-            ctrl._active.set()
-            t = threading.Thread(target=ctrl._listen, daemon=True)
-            t.start()
-            t.join(timeout=2.0)
+        with patch("builtins.input", side_effect=["q"]):
+            with patch("builtins.print"):
+                ctrl._active.set()
+                t = threading.Thread(target=ctrl._listen, daemon=True)
+                t.start()
+                t.join(timeout=2.0)
 
         assert finder.should_stop() is True
 
@@ -443,13 +481,13 @@ class TestInteractiveMenuStop:
     def test_ctrl_c_at_menu_prompt_exits_gracefully(self):
         """KI at the Select-option prompt must print Goodbye and return."""
         finder = _finder()
-        printed: list[str] = []
+        printed = []
 
-        with (
-            patch("builtins.input", side_effect=KeyboardInterrupt),
-            patch("builtins.print", side_effect=lambda *a, **_: printed.append(str(a))),
-        ):
-            interactive_menu(finder)  # must not raise
+        with patch("builtins.input", side_effect=KeyboardInterrupt):
+            with patch(
+                "builtins.print", side_effect=lambda *a, **_: printed.append(str(a))
+            ):
+                interactive_menu(finder)  # must not raise
 
         assert any("Goodbye" in s for s in printed)
 
@@ -457,15 +495,15 @@ class TestInteractiveMenuStop:
         """KI during known-sources fetch must NOT escape interactive_menu."""
         finder = _finder()
 
-        with (
-            patch.object(finder, "get_all_servers", side_effect=KeyboardInterrupt),
-            patch("builtins.input", side_effect=["1", "0"]),
-            patch("builtins.print"),
-        ):
-            try:
-                interactive_menu(finder)
-            except KeyboardInterrupt:
-                pytest.fail("KeyboardInterrupt escaped interactive_menu()")
+        with patch.object(finder, "get_all_servers", side_effect=KeyboardInterrupt):
+            with patch("builtins.input", side_effect=["1", "0"]):
+                with patch("builtins.print"):
+                    try:
+                        interactive_menu(finder)
+                    except KeyboardInterrupt:
+                        pytest.fail(
+                            "KeyboardInterrupt escaped interactive_menu()"
+                        )
 
     def test_reset_stop_called_before_option_1(self):
         """reset_stop() must be called before every fetch so a prior stop
@@ -473,20 +511,18 @@ class TestInteractiveMenuStop:
         finder = _finder()
         finder.request_stop()  # simulate previous stop
 
-        reset_calls: list[bool] = []
+        reset_calls = []
         original = finder.reset_stop
 
         def tracked():
             reset_calls.append(True)
             original()
 
-        with (
-            patch.object(finder, "reset_stop", side_effect=tracked),
-            patch.object(finder, "get_all_servers", return_value=[]),
-            patch("builtins.input", side_effect=["1", "0"]),
-            patch("builtins.print"),
-        ):
-            interactive_menu(finder)
+        with patch.object(finder, "reset_stop", side_effect=tracked):
+            with patch.object(finder, "get_all_servers", return_value=[]):
+                with patch("builtins.input", side_effect=["1", "0"]):
+                    with patch("builtins.print"):
+                        interactive_menu(finder)
 
         assert len(reset_calls) >= 1
 
@@ -499,13 +535,11 @@ class TestInteractiveMenuStop:
             finder.request_stop()
             return partial
 
-        with (
-            patch.object(finder, "get_all_servers", side_effect=stopped_fetch),
-            patch("v2ray_finder.cli.save_partial_results") as mock_save,
-            patch("builtins.input", side_effect=["1", "0"]),
-            patch("builtins.print"),
-        ):
-            interactive_menu(finder)
+        with patch.object(finder, "get_all_servers", side_effect=stopped_fetch):
+            with patch("v2ray_finder.cli.save_partial_results") as mock_save:
+                with patch("builtins.input", side_effect=["1", "0"]):
+                    with patch("builtins.print"):
+                        interactive_menu(finder)
 
         mock_save.assert_called_once()
         saved_servers = mock_save.call_args[0][0]
@@ -533,16 +567,14 @@ class TestMainNonInteractiveStop:
         out = str(tmp_path / "out.txt")
         mock_finder = self._make_mock_finder(servers=[], stopped=True)
 
-        with (
-            patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder),
-            patch("v2ray_finder.cli.StopController") as MockCtrl,
-            patch("sys.argv", ["v2ray-finder", "-o", out, "-q"]),
-            patch("builtins.print"),
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            MockCtrl.return_value.start = MagicMock()
-            MockCtrl.return_value.stop = MagicMock()
-            main()
+        with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
+            with patch("v2ray_finder.cli.StopController") as MockCtrl:
+                with patch("sys.argv", ["v2ray-finder", "-o", out, "-q"]):
+                    with patch("builtins.print"):
+                        MockCtrl.return_value.start = MagicMock()
+                        MockCtrl.return_value.stop = MagicMock()
+                        with pytest.raises(SystemExit) as exc_info:
+                            main()
 
         assert exc_info.value.code == 130
 
@@ -551,18 +583,16 @@ class TestMainNonInteractiveStop:
         partial = ["vmess://p1", "vmess://p2"]
         mock_finder = self._make_mock_finder(servers=partial, stopped=True)
 
-        with (
-            patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder),
-            patch("v2ray_finder.cli.StopController") as MockCtrl,
-            patch("sys.argv", ["v2ray-finder", "-o", out, "-q"]),
-            patch("v2ray_finder.cli.save_partial_results") as mock_save,
-            patch("v2ray_finder.cli.print_stats"),
-            patch("builtins.print"),
-            pytest.raises(SystemExit),
-        ):
-            MockCtrl.return_value.start = MagicMock()
-            MockCtrl.return_value.stop = MagicMock()
-            main()
+        with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
+            with patch("v2ray_finder.cli.StopController") as MockCtrl:
+                with patch("sys.argv", ["v2ray-finder", "-o", out, "-q"]):
+                    with patch("v2ray_finder.cli.save_partial_results") as mock_save:
+                        with patch("v2ray_finder.cli.print_stats"):
+                            with patch("builtins.print"):
+                                MockCtrl.return_value.start = MagicMock()
+                                MockCtrl.return_value.stop = MagicMock()
+                                with pytest.raises(SystemExit):
+                                    main()
 
         mock_save.assert_called_once()
         assert mock_save.call_args[0][0] == partial
@@ -572,14 +602,12 @@ class TestMainNonInteractiveStop:
         servers = ["vmess://s1", "vmess://s2"]
         mock_finder = self._make_mock_finder(servers=servers, stopped=False)
 
-        with (
-            patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder),
-            patch("v2ray_finder.cli.StopController") as MockCtrl,
-            patch("sys.argv", ["v2ray-finder", "-o", out, "-q"]),
-            patch("builtins.print"),
-        ):
-            MockCtrl.return_value.start = MagicMock()
-            MockCtrl.return_value.stop = MagicMock()
-            main()  # must NOT raise SystemExit
+        with patch("v2ray_finder.cli.V2RayServerFinder", return_value=mock_finder):
+            with patch("v2ray_finder.cli.StopController") as MockCtrl:
+                with patch("sys.argv", ["v2ray-finder", "-o", out, "-q"]):
+                    with patch("builtins.print"):
+                        MockCtrl.return_value.start = MagicMock()
+                        MockCtrl.return_value.stop = MagicMock()
+                        main()  # must NOT raise SystemExit
 
         assert out  # just confirm the file path was used
