@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
 
 from .core import V2RayServerFinder
@@ -74,7 +74,7 @@ class StopController:
                 key = input().strip().lower()
                 if key == "q":
                     console.print(
-                        "\n[yellow]\u26a0[/yellow] Stop requested \u2014 "
+                        "\n[yellow]⚠[/yellow] Stop requested — "
                         "finishing current request..."
                     )
                     self._finder.request_stop()
@@ -92,17 +92,72 @@ class StopController:
 def print_welcome() -> None:
     """Print welcome banner."""
     welcome = """
-# v2ray-finder (Rich Edition) \u2728
+# v2ray-finder (Rich Edition) ✨
 
 **Fetch V2Ray servers from GitHub and curated sources**
     """
     console.print(Markdown(welcome))
-    console.print(Panel("\u2764\ufe0f for freedom", style="bold cyan", box=box.ROUNDED))
+    console.print(Panel("❤️ for freedom", style="bold cyan", box=box.ROUNDED))
+
+
+def print_quality_guide() -> None:
+    """Display quality score reference table with Rich styling."""
+    table = Table(title="📊 Quality Score Reference Guide", box=box.DOUBLE_EDGE, show_header=True)
+    table.add_column("Score Range", style="cyan", justify="center")
+    table.add_column("Status", style="bold")
+    table.add_column("Latency", justify="center")
+    table.add_column("Recommendation", style="dim")
+    
+    table.add_row(
+        "90-100", "[green]Excellent[/green]", "<50ms (VoIP)", "Best for streaming"
+    )
+    table.add_row(
+        "70-89", "[blue]Good[/blue]", "50-150ms (Web)", "General browsing"
+    )
+    table.add_row(
+        "50-69", "[yellow]Fair[/yellow]", "150-300ms", "Acceptable for basic use"
+    )
+    table.add_row(
+        "30-49", "[orange1]Poor[/orange1]", "300-500ms", "Slow, may timeout"
+    )
+    table.add_row(
+        "0-29", "[red]Very Poor[/red]", ">500ms", "Unstable connection"
+    )
+    
+    console.print()
+    console.print(table)
+    console.print()
+    console.print("[bold cyan]Common thresholds:[/bold cyan]")
+    console.print("  •   [bold]0[/bold]  = Include all servers (no filtering)")
+    console.print("  •  [bold]50[/bold]  = Exclude very slow/unreliable servers")
+    console.print("  •  [bold]70[/bold]  = Only good/excellent servers [green](recommended)[/green]")
+    console.print("  •  [bold]90[/bold]  = Only excellent low-latency servers")
+    console.print()
+
+
+def prompt_for_quality_threshold() -> float:
+    """Prompt user for quality threshold with Rich guide."""
+    print_quality_guide()
+    
+    try:
+        threshold = FloatPrompt.ask(
+            "[bold cyan]Minimum quality score[/bold cyan]",
+            default=0.0,
+            show_default=True
+        )
+        if 0 <= threshold <= 100:
+            return threshold
+        else:
+            console.print("[yellow]![/yellow] Invalid range, using default: 0")
+            return 0.0
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]![/yellow] Interrupted, using default: 0")
+        return 0.0
 
 
 def prompt_for_token() -> Optional[str]:
     """Prompt user for GitHub token with Rich styling."""
-    console.print("\n[bold cyan]\U0001f511 GitHub Token Setup[/bold cyan]")
+    console.print("\n[bold cyan]🔑 GitHub Token Setup[/bold cyan]")
     console.print(
         "A GitHub token increases rate limits from [red]60[/red] to "
         "[green]5000[/green] requests/hour."
@@ -119,7 +174,7 @@ def prompt_for_token() -> Optional[str]:
     console.print("\n[dim]Paste your GitHub token (input will be hidden):[/dim]")
     token = getpass("Token: ").strip()
     if token:
-        console.print("[green]\u2713[/green] Token received\n")
+        console.print("[green]✓[/green] Token received\n")
         return token
 
     console.print(
@@ -158,13 +213,13 @@ def save_partial_results(
                     progress.update(task, advance=1)
 
         console.print(
-            f"\n[green]\u2713[/green] Saved [bold]{len(configs)}[/bold] "
+            f"\n[green]✓[/green] Saved [bold]{len(configs)}[/bold] "
             f"servers to [bold cyan]{filename}[/bold cyan]"
         )
         console.print("[dim]You can resume or use these servers.[/dim]\n")
     except OSError as exc:
         console.print(
-            f"\n[red]\u2717[/red] Failed to save partial results: "
+            f"\n[red]✗[/red] Failed to save partial results: "
             f"[bold]{exc}[/bold]\n"
         )
 
@@ -173,6 +228,8 @@ def fetch_servers(
     finder: V2RayServerFinder,
     use_search: bool = False,
     check_health: bool = False,
+    min_quality: float = 0.0,
+    filter_unhealthy: bool = False,
     verbose: bool = True,
 ) -> List:
     """
@@ -200,8 +257,8 @@ def fetch_servers(
                     use_github_search=use_search,
                     check_health=True,
                     health_timeout=5.0,
-                    min_quality_score=0,
-                    filter_unhealthy=False,
+                    min_quality_score=min_quality,
+                    filter_unhealthy=filter_unhealthy,
                 )
                 partial = servers
             else:
@@ -228,14 +285,14 @@ def fetch_servers(
             # partial already holds whatever was fetched up to this point
             if partial:
                 console.print(
-                    f"\n[yellow]![/yellow] Interrupted \u2014 found "
+                    f"\n[yellow]![/yellow] Interrupted — found "
                     f"[bold]{len(partial)}[/bold] servers so far"
                 )
             return partial
 
         except Exception as exc:
             progress.remove_task(task)
-            console.print(f"\n[red]\u2717[/red] Error: [bold]{exc}[/bold]")
+            console.print(f"\n[red]✗[/red] Error: [bold]{exc}[/bold]")
             return partial
 
     # Stopped via 'q' (not Ctrl+C): partial is the last complete snapshot
@@ -244,7 +301,7 @@ def fetch_servers(
 
     if verbose:
         console.print(
-            f"\n[green]\u2713[/green] Found [bold]{len(servers)}[/bold] unique servers"
+            f"\n[green]✓[/green] Found [bold]{len(servers)}[/bold] unique servers"
         )
         if check_health and servers and isinstance(servers[0], dict):
             console.print("\n[bold]Top 3 by quality:[/bold]")
@@ -291,7 +348,7 @@ def show_stats(servers: List, show_health: bool = False) -> None:
         protocols[protocol] = protocols.get(protocol, 0) + 1
 
     table = Table(
-        title=f"\U0001f4ca Statistics ({len(servers)} total servers)",
+        title=f"📊 Statistics ({len(servers)} total servers)",
         box=box.ROUNDED,
     )
     table.add_column("Protocol", style="cyan", no_wrap=True)
@@ -304,7 +361,7 @@ def show_stats(servers: List, show_health: bool = False) -> None:
     console.print(table)
 
     if has_health:
-        health_table = Table(title="\U0001f48a Health Status", box=box.ROUNDED)
+        health_table = Table(title="💊 Health Status", box=box.ROUNDED)
         health_table.add_column("Status", style="cyan")
         health_table.add_column("Count", justify="right", style="green bold")
         health_table.add_column("Percent", justify="right", style="magenta")
@@ -363,8 +420,8 @@ def save_servers(servers: List) -> None:
         console.print("[yellow]! No servers loaded[/yellow]")
         return
 
-    filename = Prompt.ask("\U0001f4c1 Filename", default="v2ray_servers.txt")
-    limit = IntPrompt.ask("\U0001f522 Limit (0 = all)", default=0)
+    filename = Prompt.ask("📁 Filename", default="v2ray_servers.txt")
+    limit = IntPrompt.ask("🔢 Limit (0 = all)", default=0)
     servers_to_save = servers[:limit] if limit > 0 else servers
     output_servers: List[str] = (
         [s["config"] for s in servers_to_save]
@@ -384,11 +441,11 @@ def save_servers(servers: List) -> None:
                     fh.write(f"{server}\n")
                     progress.update(task, advance=1)
             console.print(
-                f"\n[green]\u2713[/green] Saved [bold]{len(output_servers)}[/bold]"
+                f"\n[green]✓[/green] Saved [bold]{len(output_servers)}[/bold]"
                 f" servers to [bold cyan]{filename}[/bold cyan]"
             )
         except OSError as exc:
-            console.print(f"\n[red]\u2717[/red] Save failed: [bold]{exc}[/bold]")
+            console.print(f"\n[red]✗[/red] Save failed: [bold]{exc}[/bold]")
 
 
 def interactive_mode(finder: V2RayServerFinder) -> None:
@@ -401,7 +458,7 @@ def interactive_mode(finder: V2RayServerFinder) -> None:
     """
     print_welcome()
     console.print(
-        "[dim]\U0001f4a1 Tip: Press Ctrl+C during any operation to save partial results[/dim]\n"
+        "[dim]💡 Tip: Press Ctrl+C during any operation to save partial results[/dim]\n"
     )
 
     cached_servers: List = []
@@ -420,29 +477,38 @@ def interactive_mode(finder: V2RayServerFinder) -> None:
                 "\nSelect option", choices=["1", "2", "3", "4", "5", "6"]
             )
         except KeyboardInterrupt:
-            console.print("\n\n[bold cyan]\U0001f44b Goodbye![/bold cyan]")
+            console.print("\n\n[bold cyan]👋 Goodbye![/bold cyan]")
             break
 
         if choice == "6":
-            console.print("\n[bold cyan]\U0001f44b Goodbye![/bold cyan]")
+            console.print("\n[bold cyan]👋 Goodbye![/bold cyan]")
             break
 
         elif choice in ("1", "2", "3"):
             use_search = choice == "2"
             check_health = choice == "3"
+            min_quality = 0.0
+            filter_unhealthy = False
+            
             if check_health:
                 try:
                     use_search = Confirm.ask("Include GitHub search?", default=False)
+                    min_quality = prompt_for_quality_threshold()
+                    filter_unhealthy = Confirm.ask("Exclude unreachable servers?", default=False)
                 except KeyboardInterrupt:
                     continue
                 console.print(
-                    "\n[yellow]Note:[/yellow] Health checking may take 1\u20132 minutes"
+                    "\n[yellow]Note:[/yellow] Health checking may take 1–2 minutes"
                 )
 
             finder.reset_stop()
             try:
                 result = fetch_servers(
-                    finder, use_search=use_search, check_health=check_health
+                    finder, 
+                    use_search=use_search, 
+                    check_health=check_health,
+                    min_quality=min_quality,
+                    filter_unhealthy=filter_unhealthy
                 )
             except KeyboardInterrupt:
                 finder.request_stop()
@@ -453,7 +519,7 @@ def interactive_mode(finder: V2RayServerFinder) -> None:
 
             if finder.should_stop() and result:
                 console.print(
-                    f"\n[yellow]\u26a0[/yellow] Stopped early \u2014 "
+                    f"\n[yellow]⚠[/yellow] Stopped early — "
                     f"[bold]{len(result)}[/bold] partial results"
                 )
                 save_partial_results(result)
@@ -566,7 +632,7 @@ Examples:
 
     except Exception as exc:
         ctrl.stop()
-        console.print(f"\n[red]\u2717[/red] Unexpected error: [bold]{exc}[/bold]")
+        console.print(f"\n[red]✗[/red] Unexpected error: [bold]{exc}[/bold]")
         if partial_servers:
             save_partial_results(partial_servers)
         sys.exit(1)
@@ -577,7 +643,7 @@ Examples:
     # --- Stopped early ---
     if finder.should_stop():
         console.print(
-            "\n[yellow]\u26a0[/yellow] [bold]Operation stopped by user[/bold]"
+            "\n[yellow]⚠[/yellow] [bold]Operation stopped by user[/bold]"
         )
         if partial_servers:
             out_file = args.output if args.output else "v2ray_servers_partial.txt"
@@ -606,11 +672,11 @@ Examples:
                 for server in output_servers:
                     fh.write(f"{server}\n")
             console.print(
-                f"\n[green]\u2713[/green] Saved [bold]{len(output_servers)}[/bold]"
+                f"\n[green]✓[/green] Saved [bold]{len(output_servers)}[/bold]"
                 f" servers to [bold cyan]{args.output}[/bold cyan]"
             )
         except OSError as exc:
-            console.print(f"\n[red]\u2717[/red] Failed to save: [bold]{exc}[/bold]")
+            console.print(f"\n[red]✗[/red] Failed to save: [bold]{exc}[/bold]")
             sys.exit(1)
 
 

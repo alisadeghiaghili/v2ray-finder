@@ -48,7 +48,7 @@ class StopController:
                 key = input().strip().lower()
                 if key == "q":
                     print(
-                        "\n[!] Stop requested \u2014 finishing current request...",
+                        "\n[!] Stop requested — finishing current request...",
                         flush=True,
                     )
                     self._finder.request_stop()
@@ -61,6 +61,27 @@ class StopController:
     def stop(self) -> None:
         """Signal the listener to exit (non-blocking; thread is daemon)."""
         self._active.clear()
+
+
+def print_quality_guide() -> None:
+    """Print quality score reference table."""
+    print("\n" + "="*60)
+    print("Quality Score Reference Guide")
+    print("="*60)
+    print("Score Range │ Status      │ Latency          │ Recommendation")
+    print("────────────┼─────────────┼──────────────────┼─────────────────")
+    print("  90-100    │ Excellent   │ <50ms (VoIP)     │ Best for streaming")
+    print("  70-89     │ Good        │ 50-150ms (Web)   │ General browsing")
+    print("  50-69     │ Fair        │ 150-300ms        │ Acceptable for basic use")
+    print("  30-49     │ Poor        │ 300-500ms        │ Slow, may timeout")
+    print("  0-29      │ Very Poor   │ >500ms           │ Unstable connection")
+    print("="*60)
+    print("\nCommon thresholds:")
+    print("  • 0  = Include all servers (no filtering)")
+    print("  • 50 = Exclude very slow/unreliable servers")
+    print("  • 70 = Only good/excellent servers (recommended)")
+    print("  • 90 = Only excellent low-latency servers")
+    print("="*60 + "\n")
 
 
 def print_stats(servers, show_health: bool = False) -> None:
@@ -127,13 +148,35 @@ def prompt_for_token() -> Optional[str]:
         print("\nPaste your GitHub token (input will be hidden):")
         token = getpass("Token: ").strip()
         if token:
-            print("[\u2713] Token received\n")
+            print("[✓] Token received\n")
             return token
         print("[!] No token provided, continuing without authentication\n")
         return None
 
     print("[i] Continuing without authentication\n")
     return None
+
+
+def prompt_for_quality_threshold() -> float:
+    """Prompt user for quality threshold with guide table."""
+    print_quality_guide()
+    
+    while True:
+        try:
+            response = input("Minimum quality score (0-100, or press Enter for 0): ").strip()
+            if not response:
+                return 0.0
+            
+            threshold = float(response)
+            if 0 <= threshold <= 100:
+                return threshold
+            else:
+                print("[!] Please enter a value between 0 and 100\n")
+        except ValueError:
+            print("[!] Please enter a valid number\n")
+        except (KeyboardInterrupt, EOFError):
+            print("\n[!] Using default threshold: 0")
+            return 0.0
 
 
 def save_partial_results(
@@ -155,7 +198,7 @@ def save_partial_results(
             for server in configs:
                 fh.write(f"{server}\n")
 
-        print(f"\n[\u2713] Saved {len(configs)} servers to {filename}")
+        print(f"\n[✓] Saved {len(configs)} servers to {filename}")
         print("    You can resume or use these servers.\n")
     except OSError as exc:
         print(f"\n[!] Failed to save partial results: {exc}\n")
@@ -199,13 +242,11 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
             try:
                 servers = finder.get_all_servers(use_github_search=False)
             except KeyboardInterrupt:
-                # KeyboardInterrupt between core calls (inside core it is
-                # already caught; this is the belt-and-braces handler).
                 finder.request_stop()
                 servers = []
             partial_servers = servers
             if finder.should_stop() and servers:
-                print(f"\n[!] Stopped early \u2014 {len(servers)} partial results")
+                print(f"\n[!] Stopped early — {len(servers)} partial results")
                 save_partial_results(servers)
             print_stats(servers)
 
@@ -220,7 +261,7 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
                 servers = []
             partial_servers = servers
             if finder.should_stop() and servers:
-                print(f"\n[!] Stopped early \u2014 {len(servers)} partial results")
+                print(f"\n[!] Stopped early — {len(servers)} partial results")
                 save_partial_results(servers)
             print_stats(servers)
             rate_info = finder.get_rate_limit_info()
@@ -233,10 +274,13 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
         elif choice == "3":
             try:
                 use_search = input("Use GitHub search? (y/n): ").strip().lower() == "y"
+                min_quality = prompt_for_quality_threshold()
+                filter_unhealthy = input("Exclude unreachable servers? (y/n): ").strip().lower() == "y"
             except (KeyboardInterrupt, EOFError):
                 continue
+            
             print("\nFetching and checking server health...")
-            print("(This may take a minute \u2014 testing TCP connections)")
+            print("(This may take a minute — testing TCP connections)")
             print("(Press Ctrl+C to stop and save partial results)")
             finder.reset_stop()
             try:
@@ -244,15 +288,15 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
                     use_github_search=use_search,
                     check_health=True,
                     health_timeout=5.0,
-                    min_quality_score=0,
-                    filter_unhealthy=False,
+                    min_quality_score=min_quality,
+                    filter_unhealthy=filter_unhealthy,
                 )
             except KeyboardInterrupt:
                 finder.request_stop()
                 servers = []
             partial_servers = servers
             if finder.should_stop() and servers:
-                print(f"\n[!] Stopped early \u2014 {len(servers)} partial results")
+                print(f"\n[!] Stopped early — {len(servers)} partial results")
                 save_partial_results(servers, "v2ray_servers_partial_health.txt")
             print_stats(servers, show_health=True)
             if servers:
@@ -284,6 +328,14 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
                 check_health = (
                     input("Check server health? (y/n): ").strip().lower() == "y"
                 )
+                
+                if check_health:
+                    min_quality = prompt_for_quality_threshold()
+                    filter_unhealthy = input("Exclude unreachable servers? (y/n): ").strip().lower() == "y"
+                else:
+                    min_quality = 0.0
+                    filter_unhealthy = False
+                
                 limit_str = input("Limit (0 for all): ").strip()
             except (KeyboardInterrupt, EOFError):
                 print("\n[!] Cancelled")
@@ -295,13 +347,13 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
 
             try:
                 if check_health:
-                    print("(Health checking enabled \u2014 this will take longer)")
+                    print("(Health checking enabled — this will take longer)")
                     health_data = finder.get_servers_with_health(
                         use_github_search=use_search,
                         check_health=True,
                         health_timeout=5.0,
-                        min_quality_score=50.0,
-                        filter_unhealthy=True,
+                        min_quality_score=min_quality,
+                        filter_unhealthy=filter_unhealthy,
                     )
                     output: List[str] = [s["config"] for s in health_data]
                 else:
@@ -332,6 +384,13 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
                 check_health = (
                     input("Check server health? (y/n): ").strip().lower() == "y"
                 )
+                
+                if check_health:
+                    min_quality = prompt_for_quality_threshold()
+                    filter_unhealthy = input("Exclude unreachable servers? (y/n): ").strip().lower() == "y"
+                else:
+                    min_quality = 0.0
+                    filter_unhealthy = False
             except (KeyboardInterrupt, EOFError):
                 continue
 
@@ -344,6 +403,8 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
                         use_github_search=use_search,
                         check_health=True,
                         health_timeout=5.0,
+                        min_quality_score=min_quality,
+                        filter_unhealthy=filter_unhealthy,
                     )
                 else:
                     servers = finder.get_all_servers(use_github_search=use_search)
@@ -352,7 +413,7 @@ def interactive_menu(finder: V2RayServerFinder) -> None:
                 servers = []
             partial_servers = servers
             if finder.should_stop() and servers:
-                print(f"\n[!] Stopped early \u2014 {len(servers)} partial results")
+                print(f"\n[!] Stopped early — {len(servers)} partial results")
                 save_partial_results(servers)
             print_stats(servers, show_health=check_health)
 
@@ -552,7 +613,7 @@ def main() -> None:
             sys.exit(1)
 
         if not args.quiet:
-            print(f"\n[\u2713] Saved {len(output_servers)} servers to {args.output}")
+            print(f"\n[✓] Saved {len(output_servers)} servers to {args.output}")
 
         rate_info = finder.get_rate_limit_info()
         if rate_info and args.search and not args.quiet:
