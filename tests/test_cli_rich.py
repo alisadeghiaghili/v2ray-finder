@@ -290,7 +290,9 @@ def test_main_no_args_enters_interactive(mock_console):
             with patch("v2ray_finder.cli_rich.interactive_mode") as mock_ia:
                 with patch("v2ray_finder.cli_rich.StopController"):
                     with patch("v2ray_finder.cli_rich.Prompt"):
-                        with patch("v2ray_finder.cli_rich.Confirm"):
+                        with patch("v2ray_finder.cli_rich.Confirm") as mock_confirm:
+                            # Return False so prompt_for_token() skips getpass()
+                            mock_confirm.ask.return_value = False
                             main()
         mock_ia.assert_called_once_with(mock_finder)
 
