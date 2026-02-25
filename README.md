@@ -22,9 +22,22 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 
 ---
 
-## 🚀 What's New in v0.2.0
+## 🚀 What's New in v0.2.1
 
-### 🎉 Major Performance & Reliability Release!
+### 🐛 Ctrl+C & Graceful Stop — Complete Overhaul
+
+⌨️ **Ctrl+C now works everywhere** — all fetch layers catch KeyboardInterrupt and save partial results  
+🔒 **Thread-safe StopController** — `threading.Event` replaces bare boolean flag  
+🏥 **Batch health checking** — `health_batch_size` param, stop checked between every batch  
+🧪 **Full test coverage** for stop mechanism across CLI, Rich CLI, and core  
+🔧 **Python 3.8 compat fixes** — `ExitStack` replaces parenthesized `with` syntax  
+📦 **Windows EXE builds** — `cli_entry.py` and `cli_rich_entry.py` added for PyInstaller  
+
+> See full details in [📋 CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## 🚀 v0.2.0 — Major Performance & Reliability Release
 
 ⚡ **Async HTTP Fetching** — 10-50x faster concurrent downloads  
 💾 **Smart Caching** — 80-95% fewer GitHub API calls  
@@ -35,8 +48,6 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 🏥 **Health Checking** — TCP connectivity, latency measurement, quality scoring  
 ⌨️ **Interactive Token Prompt** — Secure masked input with `--prompt-token`  
 ⛔ **Graceful Interruption** — Press Ctrl+C to save partial results  
-
-> See full details in [📋 CHANGELOG.md](CHANGELOG.md)
 
 ---
 

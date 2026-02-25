@@ -19,19 +19,32 @@ Ziel ist es, eine saubere, deduplizierte Liste von `vmess://`-, `vless://`-, `tr
 
 ---
 
-## 🚀 Neu in v0.2.0
+## 🚀 Neu in v0.2.1
 
-### 🎉 Großes Performance & Zuverlässigkeits-Release!
+### 🐛 Ctrl+C & Graceful Stop — Komplette Überarbeitung
+
+⌨️ **Ctrl+C funktioniert jetzt überall** — alle Fetch-Layer fangen KeyboardInterrupt ab und speichern Teilergebnisse  
+🔒 **Thread-sicherer StopController** — `threading.Event` ersetzt einfache Boolean-Flag  
+🏥 **Batch Health Checking** — `health_batch_size` Parameter, Stop wird zwischen jedem Batch geprüft  
+🧪 **Vollständige Testabdeckung** für Stop-Mechanismus in CLI, Rich CLI und Core  
+🔧 **Python 3.8 Kompatibilitäts-Fixes** — `ExitStack` ersetzt geklammerte `with`-Syntax  
+📦 **Windows EXE Builds** — `cli_entry.py` und `cli_rich_entry.py` für PyInstaller hinzugefügt  
+
+> Alle Details in [📋 CHANGELOG.md](CHANGELOG.md)
+
+---
+
+## 🚀 v0.2.0 — Großes Performance & Zuverlässigkeits-Release
 
 ⚡ **Asynchrones HTTP** — 10-50x schnellere gleichzeitige Downloads  
 💾 **Intelligentes Caching** — 80-95% weniger API-Aufrufe  
 🛡️ **Verbesserte Fehlerbehandlung** — Result-Typ + Exception-Hierarchie  
 🔒 **Sichere Token-Verwaltung** — Umgebungsvariablen + `from_env()`  
-🧪 **70%+ Testabdeckung** — Python 3.8–3.12, Linux & Windows  
+🧪 **78% Testabdeckung** — Python 3.8–3.12, Linux, macOS & Windows  
 📈 **Rate-Limit-Verfolgung** — GitHub-API-Nutzung überwachen  
 🏥 **Gesundheitsprüfung** — TCP, Latenz und Qualitätsbewertung  
-
-> Alle Details in [📋 CHANGELOG.md](CHANGELOG.md)
+⌨️ **Interaktive Token-Eingabe** — Sichere maskierte Eingabe mit `--prompt-token`  
+⛔ **Graceful Interruption** — Ctrl+C speichert Teilergebnisse  
 
 ---
 
@@ -51,12 +64,15 @@ Ziel ist es, eine saubere, deduplizierte Liste von `vmess://`-, `vless://`-, `tr
 - ✅ Gesundheitsprüfung: TCP, Latenz, Konfigurationsvalidierung
 - 🎯 Qualitätsbewertung: 0–100 basierend auf Latenz
 - 🔄 Wiederholungslogik: Exponentielles Backoff
+- ⛔ Graceful Interruption: Ctrl+C speichert Teilergebnisse
 
 ### Entwicklererfahrung
 - 🛡️ `Result[T, E]`-Typ für explizite Fehlerbehandlung
 - 📈 `get_rate_limit_info()` für API-Überwachung
 - 🔒 Token-Validierung und Sicherheitswarnungen
-- ✅ CI: Python 3.8–3.12 × Linux + Windows
+- ⌨️ Interaktive Token-Eingabe mit maskierter Eingabe
+- 🧪 78% Testabdeckung auf Linux, macOS und Windows
+- ✅ CI/CD: Automatisiertes Testing und Deployment
 
 ---
 
@@ -172,11 +188,13 @@ v2ray-finder                           # Interaktive TUI
 v2ray-finder -o servers.txt            # Schnell speichern
 v2ray-finder -s -l 200 -o servers.txt  # GitHub-Suche + Limit
 v2ray-finder --stats-only              # Nur Statistiken
+v2ray-finder --prompt-token -s         # Sichere Token-Eingabe
 ```
 
 ```bash
 pip install "v2ray-finder[cli-rich]"
 v2ray-finder-rich
+v2ray-finder-rich --prompt-token
 ```
 
 ---
