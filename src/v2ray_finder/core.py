@@ -5,7 +5,7 @@ import os
 import re
 import threading
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import requests
 
@@ -141,11 +141,6 @@ class V2RayServerFinder:
         if not token:
             logger.error("Empty token provided")
             return None
-
-        # Validate token format
-        # GitHub personal access tokens typically start with ghp_ (classic) or github_pat_ (fine-grained)
-        # OAuth tokens start with gho_
-        # But we'll be lenient and accept any reasonable token format
 
         # Check minimum length (GitHub tokens are typically 40+ characters)
         if len(token) < 20:
@@ -293,14 +288,11 @@ class V2RayServerFinder:
                 url, headers=self.headers, params=params, timeout=10
             )
 
-            # Handle HTTP errors first (before _check_rate_limit to avoid
-            # TypeError when mock headers return non-string values)
             if response.status_code == 401:
                 raise AuthenticationError("Invalid or expired GitHub token")
             elif response.status_code == 404:
                 raise GitHubAPIError("GitHub API endpoint not found", status_code=404)
 
-            # Then check rate limits
             self._check_rate_limit(response)
 
             response.raise_for_status()
@@ -404,13 +396,11 @@ class V2RayServerFinder:
         try:
             response = requests.get(url, headers=self.headers, timeout=10)
 
-            # Handle HTTP errors first (before _check_rate_limit)
             if response.status_code == 404:
                 raise RepositoryNotFoundError(repo_full_name)
             elif response.status_code == 401:
                 raise AuthenticationError()
 
-            # Then check rate limits
             self._check_rate_limit(response)
 
             response.raise_for_status()
@@ -579,10 +569,6 @@ class V2RayServerFinder:
         Returns:
             Deduplicated list of server configs. Returns partial results if the
             operation is stopped via request_stop() or Ctrl+C.
-
-        Note:
-            This method uses legacy error handling (returns empty on error) for backward compatibility.
-            Check get_rate_limit_info() after calling to see if rate limits were hit.
         """
         if search_keywords is None:
             search_keywords = ["free-v2ray", "v2ray-config"]
@@ -650,8 +636,6 @@ class V2RayServerFinder:
                                     raise servers_result.error
 
         except KeyboardInterrupt:
-            # Ctrl+C pressed during a blocking requests.get() call.
-            # Partial all_servers list is captured here and returned.
             logger.info(
                 "GitHub search interrupted via Ctrl+C — "
                 f"returning {len(all_servers)} partial results"
@@ -672,9 +656,6 @@ class V2RayServerFinder:
         Returns:
             Deduplicated list of server configs from known sources. Returns
             partial results if the operation is stopped via request_stop() or Ctrl+C.
-
-        Note:
-            This method uses legacy error handling for backward compatibility.
         """
         all_servers: List[str] = []
         errors = []
@@ -698,7 +679,6 @@ class V2RayServerFinder:
                         raise result.error
 
         except KeyboardInterrupt:
-            # Ctrl+C pressed during a blocking requests.get() call.
             logger.info(
                 "Known sources fetch interrupted via Ctrl+C — "
                 f"returning {len(all_servers)} partial results"
@@ -769,6 +749,61 @@ class V2RayServerFinder:
 
         return server_list
 
+    # ---------------------------------------------------------------------------
+    # Internal helper: run one health-check batch and return converted dicts
+    # ---------------------------------------------------------------------------
+    def _health_check_batch(
+        self,
+        servers: List[str],
+        checker,
+        filter_unhealthy: bool,
+        min_quality_score: float,
+        filter_healthy_servers_fn,
+        sort_by_quality_fn,
+    ) -> List[Dict]:
+        """Health-check a list of raw config strings and return result dicts.
+
+        Args:
+            servers: Raw config strings to check.
+            checker: HealthChecker instance.
+            filter_unhealthy: Exclude unreachable servers when True.
+            min_quality_score: Minimum quality score threshold.
+            filter_healthy_servers_fn: Imported filter_healthy_servers function.
+            sort_by_quality_fn: Imported sort_by_quality function.
+
+        Returns:
+            List of result dicts, sorted by quality descending.
+        """
+        server_tuples = [
+            (s, s.split("://")[0] if "://" in s else "unknown") for s in servers
+        ]
+        health_results = checker.check_servers(server_tuples)
+
+        if filter_unhealthy or min_quality_score > 0:
+            health_results = filter_healthy_servers_fn(
+                health_results,
+                min_quality_score=min_quality_score,
+                exclude_unreachable=filter_unhealthy,
+            )
+
+        health_results = sort_by_quality_fn(health_results, descending=True)
+
+        return [
+            {
+                "config": h.config,
+                "protocol": h.protocol,
+                "health_checked": True,
+                "health_status": h.status.value,
+                "latency_ms": h.latency_ms,
+                "quality_score": h.quality_score,
+                "host": h.host,
+                "port": h.port,
+                "error": h.error,
+                "validation_error": h.validation_error,
+            }
+            for h in health_results
+        ]
+
     def get_servers_with_health(
         self,
         use_github_search: bool = False,
@@ -780,49 +815,50 @@ class V2RayServerFinder:
         health_batch_size: int = 50,
     ) -> List[Dict]:
         """
-        Get servers with optional health checking.
+        Get servers with optional health checking using a streaming pipeline.
+
+        Instead of fetching ALL servers first and health-checking at the end,
+        this method interleaves fetch and health-check steps:
+
+          1. Fetch known (curated) sources  →  health-check that batch immediately
+          2. Fetch GitHub search results     →  health-check each sub-batch immediately
+
+        This means that pressing Ctrl+C at any point during the fetch phase will
+        still yield health-checked results for every batch that completed before
+        the interruption, rather than raw unverified configs.
 
         Args:
             use_github_search: Whether to include GitHub search
             check_health: Whether to perform health checks
-            health_timeout: Timeout for health checks in seconds
-            concurrent_checks: Max concurrent health checks
+            health_timeout: Timeout for each TCP health check in seconds
+            concurrent_checks: Max concurrent health checks per batch
             min_quality_score: Minimum quality score (0-100) to include
-            filter_unhealthy: Whether to exclude unhealthy servers
-            health_batch_size: Servers per health-check batch (enables stop between batches)
+            filter_unhealthy: Whether to exclude unreachable servers
+            health_batch_size: Servers per health-check sub-batch inside GitHub
+                               search phase (enables stop between batches)
 
         Returns:
-            List of server dictionaries with health information
+            List of server dictionaries with health information, sorted by quality.
+            If health checking is disabled or unavailable, returns servers without
+            health fields.
         """
-        servers = self.get_all_servers(use_github_search=use_github_search)
-
-        if self.should_stop():
-            logger.info("Health check stopped by user request before checking")
-            return [
-                {
-                    "config": server,
-                    "protocol": (
-                        server.split("://")[0] if "://" in server else "unknown"
-                    ),
-                    "health_checked": False,
-                }
-                for server in servers
-            ]
-
+        # ------------------------------------------------------------------
+        # Fast path: no health checking requested
+        # ------------------------------------------------------------------
         if not check_health:
-            # Return without health info
+            servers = self.get_all_servers(use_github_search=use_github_search)
             return [
                 {
-                    "config": server,
-                    "protocol": (
-                        server.split("://")[0] if "://" in server else "unknown"
-                    ),
+                    "config": s,
+                    "protocol": s.split("://")[0] if "://" in s else "unknown",
                     "health_checked": False,
                 }
-                for server in servers
+                for s in servers
             ]
 
-        # Import health checker only when needed
+        # ------------------------------------------------------------------
+        # Import health checker (optional dependency)
+        # ------------------------------------------------------------------
         try:
             from .health_checker import (
                 HealthChecker,
@@ -833,86 +869,160 @@ class V2RayServerFinder:
             logger.warning(
                 "Health checker not available, returning servers without health info"
             )
+            servers = self.get_all_servers(use_github_search=use_github_search)
             return [
                 {
-                    "config": server,
-                    "protocol": (
-                        server.split("://")[0] if "://" in server else "unknown"
-                    ),
+                    "config": s,
+                    "protocol": s.split("://")[0] if "://" in s else "unknown",
                     "health_checked": False,
                 }
-                for server in servers
+                for s in servers
             ]
-
-        # Prepare server list for health checking
-        server_tuples = [
-            (server, server.split("://")[0] if "://" in server else "unknown")
-            for server in servers
-        ]
 
         checker = HealthChecker(
             timeout=health_timeout, concurrent_limit=concurrent_checks
         )
+        all_results: List[Dict] = []
 
-        # Batch health checking so stop requests are honoured between batches.
-        # A single checker.check_servers(all) call would block until all N servers
-        # are tested with no opportunity to cancel mid-way.
-        logger.info(
-            f"Checking health of {len(server_tuples)} servers "
-            f"(batch_size={health_batch_size})..."
-        )
-        health_results = []
+        # ------------------------------------------------------------------
+        # STEP 1: Known (curated) sources — fetch then immediately health-check
+        # ------------------------------------------------------------------
         try:
-            for i in range(0, len(server_tuples), health_batch_size):
-                if self.should_stop():
-                    logger.info(
-                        f"Health check stopped by user after {len(health_results)} servers "
-                        f"(batch {i // health_batch_size + 1}/"
-                        f"{(len(server_tuples) + health_batch_size - 1) // health_batch_size})"
-                    )
-                    break
-                batch = server_tuples[i : i + health_batch_size]
-                batch_results = checker.check_servers(batch)
-                health_results.extend(batch_results)
+            known_servers = self.get_servers_from_known_sources()
         except KeyboardInterrupt:
-            logger.info(
-                f"Health check interrupted via Ctrl+C after {len(health_results)} servers"
-            )
             self.request_stop()
+            known_servers = []
 
-        # Filter and sort on whatever results we have (full or partial)
-        if filter_unhealthy or min_quality_score > 0:
-            health_results = filter_healthy_servers(
-                health_results,
-                min_quality_score=min_quality_score,
-                exclude_unreachable=filter_unhealthy,
+        if known_servers:
+            logger.info(
+                f"Health-checking {len(known_servers)} servers from known sources..."
+            )
+            try:
+                checked = self._health_check_batch(
+                    known_servers,
+                    checker,
+                    filter_unhealthy,
+                    min_quality_score,
+                    filter_healthy_servers,
+                    sort_by_quality,
+                )
+            except KeyboardInterrupt:
+                self.request_stop()
+                checked = []
+            all_results.extend(checked)
+            logger.info(
+                f"Known sources: {len(checked)} servers passed health check "
+                f"({len(known_servers)} checked)"
             )
 
-        health_results = sort_by_quality(health_results, descending=True)
+        if self.should_stop():
+            logger.info(
+                f"Pipeline interrupted after known sources — "
+                f"returning {len(all_results)} health-checked servers"
+            )
+            return sorted(all_results, key=lambda x: x.get("quality_score", 0), reverse=True)
 
-        # Convert to dict format
-        result_list = []
-        for health in health_results:
-            if self.should_stop() and not result_list:
-                # Only skip conversion if we haven't started yet; once started
-                # finish converting so the caller always gets a usable list.
-                pass
-            result_list.append(
-                {
-                    "config": health.config,
-                    "protocol": health.protocol,
-                    "health_checked": True,
-                    "health_status": health.status.value,
-                    "latency_ms": health.latency_ms,
-                    "quality_score": health.quality_score,
-                    "host": health.host,
-                    "port": health.port,
-                    "error": health.error,
-                    "validation_error": health.validation_error,
-                }
+        # ------------------------------------------------------------------
+        # STEP 2: GitHub search — fetch in sub-batches, health-check each one
+        # ------------------------------------------------------------------
+        if not use_github_search:
+            return sorted(all_results, key=lambda x: x.get("quality_score", 0), reverse=True)
+
+        search_keywords = ["free-v2ray", "v2ray-config"]
+        seen: set = set(s["config"] for s in all_results)
+
+        try:
+            for keyword in search_keywords:
+                if self.should_stop():
+                    break
+
+                repos_result = self.search_repos(
+                    keywords=[keyword, "v2ray"], max_results=10
+                )
+                if repos_result.is_err():
+                    continue
+
+                pending_batch: List[str] = []
+
+                for repo in repos_result.unwrap()[:10]:
+                    if self.should_stop():
+                        break
+
+                    files_result = self.get_repo_files(repo["full_name"])
+                    if files_result.is_err():
+                        continue
+
+                    for file in files_result.unwrap():
+                        if self.should_stop():
+                            break
+
+                        if not file["download_url"]:
+                            continue
+
+                        servers_result = self.get_servers_from_url(file["download_url"])
+                        if servers_result.is_err():
+                            continue
+
+                        new_servers = [
+                            s for s in servers_result.unwrap() if s not in seen
+                        ]
+                        seen.update(new_servers)
+                        pending_batch.extend(new_servers)
+
+                        # Health-check whenever we accumulate a full batch
+                        if len(pending_batch) >= health_batch_size:
+                            if self.should_stop():
+                                break
+                            logger.info(
+                                f"Health-checking batch of {len(pending_batch)} "
+                                f"GitHub servers..."
+                            )
+                            try:
+                                checked = self._health_check_batch(
+                                    pending_batch,
+                                    checker,
+                                    filter_unhealthy,
+                                    min_quality_score,
+                                    filter_healthy_servers,
+                                    sort_by_quality,
+                                )
+                            except KeyboardInterrupt:
+                                self.request_stop()
+                                checked = []
+                            all_results.extend(checked)
+                            pending_batch = []
+
+                # Health-check any remaining servers for this keyword
+                if pending_batch and not self.should_stop():
+                    logger.info(
+                        f"Health-checking remaining {len(pending_batch)} "
+                        f"GitHub servers for keyword '{keyword}'..."
+                    )
+                    try:
+                        checked = self._health_check_batch(
+                            pending_batch,
+                            checker,
+                            filter_unhealthy,
+                            min_quality_score,
+                            filter_healthy_servers,
+                            sort_by_quality,
+                        )
+                    except KeyboardInterrupt:
+                        self.request_stop()
+                        checked = []
+                    all_results.extend(checked)
+
+        except KeyboardInterrupt:
+            self.request_stop()
+            logger.info(
+                f"GitHub search pipeline interrupted — "
+                f"returning {len(all_results)} health-checked servers"
             )
 
-        return result_list
+        logger.info(
+            f"Streaming pipeline complete — {len(all_results)} servers total"
+        )
+        return sorted(all_results, key=lambda x: x.get("quality_score", 0), reverse=True)
 
     def save_to_file(
         self,
