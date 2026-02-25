@@ -288,8 +288,9 @@ def test_main_no_args_enters_interactive(mock_console):
         mock_finder = Mock()
         with patch("v2ray_finder.cli_rich.V2RayServerFinder", return_value=mock_finder):
             with patch("v2ray_finder.cli_rich.interactive_mode") as mock_ia:
-                with patch("v2ray_finder.cli_rich.Prompt"):
-                    main()
+                with patch("v2ray_finder.cli_rich.StopController"):
+                    with patch("v2ray_finder.cli_rich.Prompt"):
+                        main()
         mock_ia.assert_called_once_with(mock_finder)
 
 
