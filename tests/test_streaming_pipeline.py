@@ -6,7 +6,7 @@ phase still yields health-checked results for completed batches.
 """
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -60,6 +60,26 @@ def _ok(value):
     return Ok(value)
 
 
+def _search_repos_one_shot(repo):
+    """Return a side_effect for search_repos that yields one repo on the
+    first keyword and an empty list on subsequent keywords.
+
+    The production loop calls search_repos once per keyword in
+    ["free-v2ray", "v2ray-config"], so without this guard the mock
+    returns the same repo twice, causing get_servers_from_url to be
+    called more times than side_effect items.
+    """
+    calls = []
+
+    def _side_effect(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return _ok([repo])
+        return _ok([])
+
+    return _side_effect
+
+
 # ---------------------------------------------------------------------------
 # Known sources batch is health-checked immediately
 # ---------------------------------------------------------------------------
@@ -101,9 +121,10 @@ def test_streaming_github_batches_checked_incrementally(finder):
     GitHub servers must be health-checked in batches as they are fetched.
 
     Setup:
-      - 2 files, each returning 1 server  → health_batch_size=1
-        so each file triggers an immediate health-check flush.
-      - checker.check_servers is called twice (once per file).
+      - 2 files, each returning 1 server, health_batch_size=1.
+      - search_repos returns the repo only on the first keyword call so that
+        get_servers_from_url is called exactly twice (once per file).
+      - check_servers must therefore also be called exactly twice.
     """
     hc_mod = _make_hc_module()
     checker = hc_mod.HealthChecker.return_value
@@ -123,7 +144,7 @@ def test_streaming_github_batches_checked_incrementally(finder):
     with patch.object(
         finder, "get_servers_from_known_sources", return_value=[]
     ), patch.object(
-        finder, "search_repos", return_value=_ok([mock_repo])
+        finder, "search_repos", side_effect=_search_repos_one_shot(mock_repo)
     ), patch.object(
         finder, "get_repo_files", return_value=_ok(mock_files)
     ), patch.object(
@@ -135,12 +156,10 @@ def test_streaming_github_batches_checked_incrementally(finder):
         result = finder.get_servers_with_health(
             use_github_search=True,
             check_health=True,
-            health_batch_size=1,  # flush after every single server
+            health_batch_size=1,
         )
 
-    # Each file triggered one health-check call
     assert checker.check_servers.call_count == 2
-
     assert len(result) == 2
     configs = [r["config"] for r in result]
     assert "vmess://batch1-0" in configs
@@ -215,7 +234,7 @@ def test_streaming_ctrl_c_during_health_check_returns_partial(finder):
     with patch.object(
         finder, "get_servers_from_known_sources", return_value=[]
     ), patch.object(
-        finder, "search_repos", return_value=_ok([mock_repo])
+        finder, "search_repos", side_effect=_search_repos_one_shot(mock_repo)
     ), patch.object(
         finder, "get_repo_files", return_value=_ok(mock_files)
     ), patch.object(
@@ -268,7 +287,7 @@ def test_streaming_request_stop_between_batches_stops_gracefully(finder):
     with patch.object(
         finder, "get_servers_from_known_sources", return_value=[]
     ), patch.object(
-        finder, "search_repos", return_value=_ok([mock_repo])
+        finder, "search_repos", side_effect=_search_repos_one_shot(mock_repo)
     ), patch.object(
         finder, "get_repo_files", return_value=_ok(mock_files)
     ), patch.object(
@@ -343,7 +362,7 @@ def test_streaming_deduplication_across_batches(finder):
     with patch.object(
         finder, "get_servers_from_known_sources", return_value=["vmess://dup"]
     ), patch.object(
-        finder, "search_repos", return_value=_ok([mock_repo])
+        finder, "search_repos", side_effect=_search_repos_one_shot(mock_repo)
     ), patch.object(
         finder, "get_repo_files", return_value=_ok(mock_files)
     ), patch.object(
