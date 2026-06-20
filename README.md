@@ -1,57 +1,78 @@
-# v2ray-finder
+# V2Ray Finder — .NET Edition
 
-[![PyPI version](https://badge.fury.io/py/v2ray-finder.svg)](https://badge.fury.io/py/v2ray-finder)
-[![Python Versions](https://img.shields.io/pypi/pyversions/v2ray-finder.svg)](https://pypi.org/project/v2ray-finder/)
-[![Tests](https://github.com/alisadeghiaghili/v2ray-finder/workflows/Tests/badge.svg)](https://github.com/alisadeghiaghili/v2ray-finder/actions)
-[![Code Quality](https://github.com/alisadeghiaghili/v2ray-finder/workflows/Code%20Quality/badge.svg)](https://github.com/alisadeghiaghili/v2ray-finder/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Stars](https://img.shields.io/github/stars/alisadeghiaghili/v2ray-finder?style=flat)](https://github.com/alisadeghiaghili/v2ray-finder/stargazers)
+Port of [v2ray-finder](https://github.com/alisadeghiaghili/v2ray-finder) in **C# / .NET 8**.
 
-[فارسی](README.fa.md) | [English](README.en.md) | [Deutsch](README.de.md) | [📋 CHANGELOG](CHANGELOG.md)
+## ساختار پروژه
 
----
-
-A **high-performance** tool to **fetch, aggregate, validate and health-check public V2Ray server configs** from GitHub and curated subscription sources.
-
-**Built with love for eternal freedom ❤️**
-
----
-
-## 🚀 What's New in v0.7.0
-
-🛡️ **Structured error model** — `FetchResult.structured_error` with `category` / `kind` / `message` hierarchy (V1-D2)  
-🔄 **xray Layer-3 port-contention retry** — auto-retry on a fresh OS port when xray fails to bind (V1-D4)  
-🖥️ **GUI fully migrated to Pipeline** — Stop button, real progress bar, Score/Grade/Latency columns, Failed Sources panel (V1-A2)  
-
-```python
-from v2ray_finder import Pipeline, StopController
-
-pipeline = Pipeline(check_health=True)
-result = pipeline.run()
-for score in result.scores[:5]:
-    print(score.grade, score.config[:80])
+```
+V2RayFinder/
+├── src/
+│   ├── V2RayFinder.Core/          # کتابخانه اصلی
+│   │   ├── Models/Models.cs       # مدل‌ها (V2RayConfig, Result<T,E>, ...)
+│   │   ├── ConfigParser.cs        # پارسر کانفیگ‌های V2Ray
+│   │   ├── SubscriptionSources.cs # لیست منابع عمومی
+│   │   ├── SubscriptionFetcher.cs # فچر async با retry و structured error
+│   │   ├── HealthChecker.cs       # بررسی سلامت TCP
+│   │   ├── ConfigScorer.cs        # امتیازدهی A–F
+│   │   └── Pipeline.cs            # ارکستراتور اصلی
+│   └── V2RayFinder.Cli/           # برنامه CLI
+│       └── Program.cs
 ```
 
-> **Full docs:** [README.en.md](README.en.md) | **فارسی:** [README.fa.md](README.fa.md) | **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+## معادل‌سازی با Python
 
----
+| Python | C# |
+|--------|-----|
+| `Pipeline` | `Pipeline` |
+| `AsyncFetcher` | `SubscriptionFetcher` |
+| `HealthChecker` | `HealthChecker` |
+| `ConfigScorer` | `ConfigScorer` |
+| `StopController` | `CancellationToken` |
+| `Result[T, E]` | `Result<T, E>` |
+| `FetchResult.structured_error` | `FetchResult.StructuredError` |
+| `PipelineResult` | `PipelineResult` |
 
-## 📦 Quick Install
+## نصب و اجرا
 
 ```bash
-pip install v2ray-finder                # core
-pip install "v2ray-finder[async]"       # + httpx for concurrent fetch
-pip install "v2ray-finder[all]"         # everything
+# Build
+dotnet build
+
+# Run CLI
+dotnet run --project src/V2RayFinder.Cli -- -o servers.txt
+dotnet run --project src/V2RayFinder.Cli -- --check-health -l 200 -o healthy.txt
 ```
 
----
+## استفاده از API
 
-## 🧪 Test Coverage
+```csharp
+using V2RayFinder.Core;
 
-~85% across Python 3.8–3.12, Linux, macOS & Windows.
+// ساده‌ترین حالت
+var pipeline = new Pipeline(checkHealth: true);
+var result = await pipeline.RunAsync();
 
----
+Console.WriteLine($"Fetched: {result.Stats.Fetched}, Unique: {result.Stats.Deduped}");
+foreach (var score in result.Scores.Take(10))
+    Console.WriteLine($"{score.Grade}  {score.Total:F3}  {score.Config[..80]}");
 
-## 📝 License
+// با cancellation
+using var cts = new CancellationTokenSource();
+var result = await pipeline.RunAsync(cts.Token, onProgress: (stage, cur, tot, msg) =>
+    Console.WriteLine($"[{stage}] {cur}/{tot} {msg}"));
 
-MIT License © 2026 Ali Sadeghi Aghili
+// ذخیره در فایل
+await File.WriteAllLinesAsync("servers.txt", result.Scores.Select(s => s.Config));
+```
+
+## CLI Options
+
+```
+-o, --output <file>    ذخیره در فایل
+-c, --check-health     بررسی TCP
+-l, --limit <n>        حداکثر تعداد کانفیگ
+-n, --top <n>          نمایش N کانفیگ برتر (default: 10)
+-j, --concurrency <n>  همزمانی fetch (default: 10)
+    --timeout <sec>    تایم‌اوت (default: 15)
+-h, --help             راهنما
+```

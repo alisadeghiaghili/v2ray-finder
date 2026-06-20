@@ -139,3 +139,5 @@ v2ray_servers.txt
 *.txt
 !requirements.txt
 backup_old/
+/.vs/V2RayFinder
+/.gitignore
