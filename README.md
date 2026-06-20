@@ -17,9 +17,6 @@ V2RayFinder/
 │   │   └── Pipeline.cs            # ارکستراتور اصلی
 │   └── V2RayFinder.Cli/           # برنامه CLI
 │       └── Program.cs
-└── tests/
-    └── V2RayFinder.Tests/         # تست‌های واحد (xUnit)
-        └── CoreTests.cs
 ```
 
 ## معادل‌سازی با Python
@@ -44,9 +41,6 @@ dotnet build
 # Run CLI
 dotnet run --project src/V2RayFinder.Cli -- -o servers.txt
 dotnet run --project src/V2RayFinder.Cli -- --check-health -l 200 -o healthy.txt
-
-# Tests
-dotnet test
 ```
 
 ## استفاده از API
