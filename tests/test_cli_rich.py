@@ -412,6 +412,7 @@ class TestRunPipeline(unittest.TestCase):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
             fname = f.name
         try:
+
             def fake_run(stop_event=None, progress_callback=None):
                 if stop_event:
                     stop_event.set()
