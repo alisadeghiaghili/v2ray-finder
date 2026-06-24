@@ -7,14 +7,15 @@ import pytest
 
 from v2ray_finder.cli import interactive_menu, main, print_stats
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_pipeline_result(configs=None, health_dicts=None, scores=None, stats=None):
     """Build a minimal PipelineResult-like Mock."""
     from v2ray_finder.pipeline import PipelineResult
+
     result = PipelineResult()
     result.configs = configs or []
     result.health_dicts = health_dicts or []
@@ -176,10 +177,12 @@ def test_main_ctrlc_saves_partial(tmp_path, capsys):
 
     with patch("sys.argv", ["v2ray-finder", "-o", out_file]):
         with patch("v2ray_finder.cli.Pipeline") as MockPipeline:
+
             def run_and_stop(stop_event=None):
                 if stop_event:
                     stop_event.set()
                 return result
+
             MockPipeline.return_value.run.side_effect = run_and_stop
             with patch("v2ray_finder.cli.prompt_for_token", return_value=None):
                 with pytest.raises(SystemExit) as exc:
@@ -237,6 +240,7 @@ def test_interactive_menu_fetch_known_sources(capsys):
 def test_interactive_menu_health_check_shows_top(capsys):
     """Choice '2' with health check, then shows top 10 when asked."""
     from v2ray_finder.scorer import ServerScore
+
     score = ServerScore(
         config="vmess://s1",
         protocol="vmess",
@@ -252,8 +256,15 @@ def test_interactive_menu_health_check_shows_top(capsys):
     )
     result = _make_pipeline_result(
         configs=["vmess://s1"],
-        health_dicts=[{"config": "vmess://s1", "protocol": "vmess",
-                       "health_status": "healthy", "quality_score": 95.0, "latency_ms": 40.0}],
+        health_dicts=[
+            {
+                "config": "vmess://s1",
+                "protocol": "vmess",
+                "health_status": "healthy",
+                "quality_score": 95.0,
+                "latency_ms": 40.0,
+            }
+        ],
         scores=[score],
     )
     with patch("v2ray_finder.cli._run_pipeline_interactive", return_value=result):
