@@ -39,7 +39,9 @@ def _default_config_source_map(configs=None, url: str = SRC_URL) -> dict:
 class _FakeFetchResult:
     """Minimal AsyncFetcher FetchResult stand-in."""
 
-    def __init__(self, url: str, content: str = "", success: bool = True, error: str = ""):
+    def __init__(
+        self, url: str, content: str = "", success: bool = True, error: str = ""
+    ):
         self.url = url
         self.content = content
         self.success = success
@@ -126,6 +128,7 @@ class TestPipelineResult(unittest.TestCase):
 
     def test_to_json_round_trip(self):
         import json
+
         r = PipelineResult(configs=[VMESS])
         data = json.loads(r.to_json())
         self.assertIn("configs", data)
@@ -280,8 +283,10 @@ class TestPipelineFetchSync(unittest.TestCase):
         text = "\n".join(SAMPLE_CONFIGS)
         fake_result = _FakeFetchResult(url=src.url, content=text, success=True)
 
-        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
-                   return_value=[fake_result]):
+        with patch(
+            "v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+            return_value=[fake_result],
+        ):
             result = p._fetch_all_sync(stop, None)
 
         self.assertIn(src.url, result)
@@ -296,8 +301,10 @@ class TestPipelineFetchSync(unittest.TestCase):
             url=src.url, content="", success=False, error="404 Not Found"
         )
 
-        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
-                   return_value=[fake_result]):
+        with patch(
+            "v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+            return_value=[fake_result],
+        ):
             result = p._fetch_all_sync(stop, None)
 
         # Either missing or mapped to an error dict, never a config list
@@ -309,14 +316,18 @@ class TestPipelineFetchSync(unittest.TestCase):
         p = self._make_pipeline([src])
         stop = threading.Event()
 
-        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
-                   side_effect=Exception("connection refused")):
+        with patch(
+            "v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+            side_effect=Exception("connection refused"),
+        ):
             # Should not raise — pipeline handles fetch errors gracefully
             try:
                 result = p._fetch_all_sync(stop, None)
                 # If it returns, source should not be in results as a list
-                self.assertNotIn(src.url, {k: v for k, v in result.items()
-                                            if isinstance(v, list) and v})
+                self.assertNotIn(
+                    src.url,
+                    {k: v for k, v in result.items() if isinstance(v, list) and v},
+                )
             except Exception:
                 pass  # If it does raise, that's acceptable for a network error
 
@@ -346,8 +357,10 @@ class TestPipelineFetchSync(unittest.TestCase):
         fake_results = [
             _FakeFetchResult(url=s.url, content=text, success=True) for s in srcs
         ]
-        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
-                   return_value=fake_results):
+        with patch(
+            "v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+            return_value=fake_results,
+        ):
             result = p._fetch_all_sync(stop, None)
 
         config_lists = {k: v for k, v in result.items() if isinstance(v, list) and v}
@@ -424,8 +437,15 @@ class TestPipelineRunHealth(unittest.TestCase):
 
         self.assertEqual(len(dicts), len(SAMPLE_CONFIGS))
         required_keys = {
-            "config", "protocol", "tcp_ok", "http_ok", "google_204_ok",
-            "latency_ms", "health_checked", "source_url", "source_trust",
+            "config",
+            "protocol",
+            "tcp_ok",
+            "http_ok",
+            "google_204_ok",
+            "latency_ms",
+            "health_checked",
+            "source_url",
+            "source_trust",
             "overlap_ratio",
         }
         for d in dicts:
@@ -511,11 +531,16 @@ class TestPipelineRunHealth(unittest.TestCase):
             call_count[0] += 1
             stop.set()
             from v2ray_finder.health_checker import HealthStatus, ServerHealth
+
             return [
                 ServerHealth(
-                    config=batch[0], protocol="vless",
-                    status=HealthStatus.HEALTHY, tcp_ok=True,
-                    http_probe_ok=False, google_204_ok=False, latency_ms=10.0,
+                    config=batch[0],
+                    protocol="vless",
+                    status=HealthStatus.HEALTHY,
+                    tcp_ok=True,
+                    http_probe_ok=False,
+                    google_204_ok=False,
+                    latency_ms=10.0,
                 )
             ]
 
@@ -571,6 +596,7 @@ class TestPipelineEmit(unittest.TestCase):
     def test_emit_callback_exception_suppressed(self):
         def bad_cb(*a):
             raise RuntimeError("oops")
+
         Pipeline._emit(bad_cb, "score", 0, 1, "msg")
 
     def test_emit_stage_values(self):
@@ -612,9 +638,13 @@ class TestPipelineIntegration(unittest.TestCase):
         def fake_check_batch(batch):
             return [
                 ServerHealth(
-                    config=c, protocol="vless",
-                    status=HealthStatus.HEALTHY, tcp_ok=True,
-                    http_probe_ok=False, google_204_ok=False, latency_ms=100.0,
+                    config=c,
+                    protocol="vless",
+                    status=HealthStatus.HEALTHY,
+                    tcp_ok=True,
+                    http_probe_ok=False,
+                    google_204_ok=False,
+                    latency_ms=100.0,
                 )
                 for c in batch
             ]
@@ -677,25 +707,30 @@ class TestInitExports(unittest.TestCase):
 
     def test_pipeline_importable_from_package(self):
         import v2ray_finder
+
         self.assertTrue(hasattr(v2ray_finder, "Pipeline"))
 
     def test_stop_controller_importable_from_package(self):
         import v2ray_finder
+
         self.assertTrue(hasattr(v2ray_finder, "StopController"))
 
     def test_pipeline_result_importable_from_package(self):
         import v2ray_finder
+
         self.assertTrue(hasattr(v2ray_finder, "PipelineResult"))
 
     def test_version_is_string(self):
         """Version must be a non-empty string in semver-like format."""
         import v2ray_finder
+
         self.assertIsInstance(v2ray_finder.__version__, str)
         self.assertRegex(v2ray_finder.__version__, r"^\d+\.\d+\.\d+")
 
     def test_version_at_least_1_0_0(self):
         """Version must be >= 1.0.0 (current: 1.0.0)."""
         import v2ray_finder
+
         major, minor, *_ = v2ray_finder.__version__.split(".")
         self.assertGreaterEqual(int(major), 1)
 
