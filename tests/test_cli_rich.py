@@ -10,7 +10,9 @@ import sys
 import tempfile
 import unittest
 from io import StringIO
-from unittest.mock import MagicMock, patch, patch as _patch
+from unittest.mock import MagicMock
+from unittest.mock import patch
+from unittest.mock import patch as _patch
 
 from v2ray_finder.pipeline import PipelineResult, StopController
 
@@ -164,6 +166,7 @@ class TestShowStats(unittest.TestCase):
             patch("sys.stdout", buf),
         ):
             from v2ray_finder import cli_rich as cr
+
             cr.show_stats(SAMPLE[:], result=result)
         # Should print total at minimum
         self.assertIn("Total servers", buf.getvalue())
