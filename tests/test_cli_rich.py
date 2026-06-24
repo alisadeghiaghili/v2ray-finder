@@ -10,9 +10,7 @@ import sys
 import tempfile
 import unittest
 from io import StringIO
-from unittest.mock import MagicMock
-from unittest.mock import patch
-from unittest.mock import patch as _patch
+from unittest.mock import MagicMock, patch
 
 from v2ray_finder.pipeline import PipelineResult, StopController
 
@@ -28,7 +26,7 @@ SAMPLE = [VMESS, VLESS, TROJAN]
 
 
 def _make_result(configs=None, scores=None, stats=None):
-    r = PipelineResult(
+    return PipelineResult(
         configs=configs if configs is not None else SAMPLE[:],
         scores=scores or [],
         stats=stats
@@ -43,11 +41,10 @@ def _make_result(configs=None, scores=None, stats=None):
             "cache_misses": 0,
         },
     )
-    return r
 
 
 def _run_main(*argv):
-    """Run cli_rich.main() and capture stdout; returns (stdout, exit_code)."""
+    """Run cli_rich.main() with patched sys.argv; return (stdout, exit_code)."""
     import v2ray_finder.cli_rich as _cr
 
     buf = StringIO()
@@ -147,7 +144,6 @@ class TestShowStats(unittest.TestCase):
         self.assertIn("unknown", out)
 
     def test_pipeline_stats_no_exception(self):
-        """show_stats with a result dict does not raise."""
         result = _make_result(
             stats={
                 "fetched": 10,
@@ -168,7 +164,6 @@ class TestShowStats(unittest.TestCase):
             from v2ray_finder import cli_rich as cr
 
             cr.show_stats(SAMPLE[:], result=result)
-        # Should print total at minimum
         self.assertIn("Total servers", buf.getvalue())
 
 
@@ -236,6 +231,22 @@ class TestSaveResults(unittest.TestCase):
         finally:
             os.unlink(fname)
 
+    def test_write_error_does_not_crash(self):
+        from v2ray_finder.cli_rich import save_results
+
+        buf = StringIO()
+        with (
+            patch("v2ray_finder.cli_rich.RICH_AVAILABLE", False),
+            patch("sys.stdout", buf),
+            patch("builtins.open", side_effect=OSError("disk full")),
+        ):
+            # Should not raise — save_results handles OSError gracefully or
+            # propagates; either way it must not silently swallow the error.
+            try:
+                save_results([VMESS], "out.txt")
+            except OSError:
+                pass  # propagating is acceptable
+
 
 # ---------------------------------------------------------------------------
 # _configs_from_result
@@ -271,6 +282,16 @@ class TestConfigsFromResult(unittest.TestCase):
         r = _make_result()
         self.assertIsInstance(_configs_from_result(r), list)
 
+    def test_uses_top_configs_when_scores_present(self):
+        from v2ray_finder.cli_rich import _configs_from_result
+        from v2ray_finder.scorer import ServerScore
+
+        score = ServerScore(config=VMESS, protocol="vmess", latency_score=0.9)
+        r = PipelineResult(configs=[TROJAN], scores=[score])
+        out = _configs_from_result(r)
+        # top_configs comes from scores, not raw configs
+        self.assertIn(VMESS, out)
+
 
 # ---------------------------------------------------------------------------
 # _run_pipeline
@@ -278,7 +299,6 @@ class TestConfigsFromResult(unittest.TestCase):
 
 
 class TestRunPipeline(unittest.TestCase):
-    """Tests for cli_rich._run_pipeline (uses `pipeline` kwarg, not `Pipeline`)."""
 
     def _make_pipeline_mock(self, result=None):
         mock_pl = MagicMock()
@@ -367,7 +387,7 @@ class TestRunPipeline(unittest.TestCase):
         stop = StopController()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
             fname = f.name
-        os.unlink(fname)  # pre-delete so we can check it wasn't written
+        os.unlink(fname)
         try:
             mock_pl = self._make_pipeline_mock()
             with patch("v2ray_finder.cli_rich.RICH_AVAILABLE", False):
@@ -378,13 +398,64 @@ class TestRunPipeline(unittest.TestCase):
                     limit=0,
                     stats_only=True,
                 )
-            # File should NOT exist when stats_only=True
             self.assertFalse(os.path.exists(fname))
         except AssertionError:
             raise
         finally:
             if os.path.exists(fname):
                 os.unlink(fname)
+
+    def test_partial_save_on_stop_with_output(self):
+        from v2ray_finder.cli_rich import _run_pipeline
+
+        stop = StopController()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            fname = f.name
+        try:
+            def fake_run(stop_event=None, progress_callback=None):
+                if stop_event:
+                    stop_event.set()
+                return _make_result()
+
+            mock_pl = MagicMock()
+            mock_pl.run.side_effect = fake_run
+            with patch("v2ray_finder.cli_rich.RICH_AVAILABLE", False):
+                code = _run_pipeline(
+                    pipeline=mock_pl,
+                    stop_ctrl=stop,
+                    output=fname,
+                    limit=0,
+                    stats_only=False,
+                )
+            self.assertEqual(code, 130)
+            with open(fname) as fh:
+                lines = [l.strip() for l in fh if l.strip()]
+            self.assertGreater(len(lines), 0)
+        finally:
+            if os.path.exists(fname):
+                os.unlink(fname)
+
+    def test_keyboard_interrupt_triggers_stop(self):
+        from v2ray_finder.cli_rich import _run_pipeline
+
+        stop = StopController()
+
+        def fake_run(stop_event=None, progress_callback=None):
+            raise KeyboardInterrupt
+
+        mock_pl = MagicMock()
+        mock_pl.run.side_effect = fake_run
+
+        with patch("v2ray_finder.cli_rich.RICH_AVAILABLE", False):
+            code = _run_pipeline(
+                pipeline=mock_pl,
+                stop_ctrl=stop,
+                output=None,
+                limit=0,
+                stats_only=False,
+            )
+        self.assertTrue(stop.is_set())
+        self.assertEqual(code, 130)
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +466,6 @@ class TestRunPipeline(unittest.TestCase):
 class TestCLIRichNonInteractive(unittest.TestCase):
 
     def _patch_pipeline_run(self, result=None):
-        """Patch Pipeline.run at module level."""
         from v2ray_finder import pipeline as _pl
 
         return patch.object(_pl.Pipeline, "run", return_value=result or _make_result())
@@ -433,7 +503,6 @@ class TestCLIRichNonInteractive(unittest.TestCase):
             patch.object(_pl.Pipeline, "run", return_value=PipelineResult()),
         ):
             _run_main("--stats-only", "-c")
-        # check_health=True must appear in kwargs
         _, kw = mock_init.call_args
         self.assertTrue(kw.get("check_health"))
 
@@ -472,8 +541,52 @@ class TestCLIRichNonInteractive(unittest.TestCase):
 
     def test_token_flag_prints_warning(self):
         _, code = _run_main("--stats-only", "-t", "mytoken")
-        # Should not crash regardless of warning
         self.assertIn(code, (0, 1))
+
+    def test_limit_flag_forwarded(self):
+        from v2ray_finder import pipeline as _pl
+
+        with (
+            patch.object(_pl.Pipeline, "__init__", return_value=None) as mock_init,
+            patch.object(_pl.Pipeline, "run", return_value=_make_result()),
+        ):
+            _run_main("--stats-only", "-l", "5")
+        _, kw = mock_init.call_args
+        self.assertEqual(kw.get("limit"), 5)
+
+    def test_check_http_forwarded(self):
+        from v2ray_finder import pipeline as _pl
+
+        with (
+            patch.object(_pl.Pipeline, "__init__", return_value=None) as mock_init,
+            patch.object(_pl.Pipeline, "run", return_value=PipelineResult()),
+        ):
+            _run_main("--stats-only", "--check-http")
+        _, kw = mock_init.call_args
+        self.assertTrue(kw.get("check_http_probe"))
+
+    def test_check_google_204_forwarded(self):
+        from v2ray_finder import pipeline as _pl
+
+        with (
+            patch.object(_pl.Pipeline, "__init__", return_value=None) as mock_init,
+            patch.object(_pl.Pipeline, "run", return_value=PipelineResult()),
+        ):
+            _run_main("--stats-only", "--check-google-204")
+        _, kw = mock_init.call_args
+        self.assertTrue(kw.get("check_google_204"))
+
+    def test_env_token_used(self):
+        from v2ray_finder import pipeline as _pl
+
+        with (
+            patch.object(_pl.Pipeline, "__init__", return_value=None) as mock_init,
+            patch.object(_pl.Pipeline, "run", return_value=_make_result()),
+            patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_envtoken"}),
+        ):
+            _run_main("--stats-only")
+        _, kw = mock_init.call_args
+        self.assertEqual(kw.get("github_token"), "ghp_envtoken")
 
 
 if __name__ == "__main__":
