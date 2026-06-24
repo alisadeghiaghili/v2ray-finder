@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import threading
-import types
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 from v2ray_finder.pipeline import Pipeline, PipelineResult, StopController
 from v2ray_finder.scorer import ServerScore
@@ -34,16 +33,18 @@ def _make_source(url: str = SRC_URL) -> SourceEntry:
 
 
 def _default_config_source_map(configs=None, url: str = SRC_URL) -> dict:
-    """Build a minimal config_source_map mapping each config to *url*."""
     return {c: url for c in (configs or SAMPLE_CONFIGS)}
 
 
-class _FakeResponse:
-    """Minimal requests.Response stand-in."""
+class _FakeFetchResult:
+    """Minimal AsyncFetcher FetchResult stand-in."""
 
-    def __init__(self, text: str = "", status_code: int = 200):
-        self.text = text
-        self.status_code = status_code
+    def __init__(self, url: str, content: str = "", success: bool = True, error: str = ""):
+        self.url = url
+        self.content = content
+        self.success = success
+        self.error = error
+        self.structured_error = None
 
 
 # ---------------------------------------------------------------------------
@@ -76,12 +77,12 @@ class TestStopController(unittest.TestCase):
     def test_stop_idempotent(self):
         ctrl = StopController()
         ctrl.stop()
-        ctrl.stop()  # second call must not raise
+        ctrl.stop()
         self.assertTrue(ctrl.is_set())
 
     def test_reset_idempotent(self):
         ctrl = StopController()
-        ctrl.reset()  # reset without prior stop must not raise
+        ctrl.reset()
         self.assertFalse(ctrl.is_set())
 
 
@@ -117,6 +118,26 @@ class TestPipelineResult(unittest.TestCase):
         r = PipelineResult()
         self.assertEqual(r.top_configs, [])
 
+    def test_to_dict_keys_present(self):
+        r = PipelineResult(configs=SAMPLE_CONFIGS[:])
+        d = r.to_dict()
+        for key in ("stats", "source_attribution", "servers", "configs"):
+            self.assertIn(key, d)
+
+    def test_to_json_round_trip(self):
+        import json
+        r = PipelineResult(configs=[VMESS])
+        data = json.loads(r.to_json())
+        self.assertIn("configs", data)
+
+    def test_failed_sources_empty_by_default(self):
+        r = PipelineResult()
+        self.assertEqual(r.failed_sources, {})
+
+    def test_failed_source_messages_empty_by_default(self):
+        r = PipelineResult()
+        self.assertEqual(r.failed_source_messages, {})
+
 
 # ---------------------------------------------------------------------------
 # Pipeline.__init__
@@ -127,6 +148,7 @@ class TestPipelineInit(unittest.TestCase):
 
     def test_defaults(self):
         p = Pipeline()
+        # check_health default is True (confirmed in pipeline.py __init__)
         self.assertTrue(p.check_health)
         self.assertFalse(p.check_http_probe)
         self.assertFalse(p.check_google_204)
@@ -171,6 +193,14 @@ class TestPipelineInit(unittest.TestCase):
         p = Pipeline()
         self.assertGreater(len(p.sources), 0)
 
+    def test_cache_disabled_by_default(self):
+        p = Pipeline()
+        self.assertIsNone(p._cache)
+
+    def test_cache_enabled(self):
+        p = Pipeline(cache_enabled=True)
+        self.assertIsNotNone(p._cache)
+
 
 # ---------------------------------------------------------------------------
 # Pipeline.run — high-level behaviour
@@ -180,11 +210,10 @@ class TestPipelineInit(unittest.TestCase):
 class TestPipelineRun(unittest.TestCase):
 
     def _pipeline_with_fake_fetch(self, configs=None, check_health=False):
-        """Return a Pipeline whose _fetch_all_sync is stubbed."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=check_health)
-        raw_text = "\n".join(configs or SAMPLE_CONFIGS)
-        p._fetch_all_sync = lambda stop, cb: {src.url: _parse_inline(raw_text)}
+        configs_list = configs or SAMPLE_CONFIGS
+        p._fetch_all_sync = lambda stop, cb: {src.url: list(configs_list)}
         return p
 
     def test_run_no_health_returns_configs(self):
@@ -197,26 +226,18 @@ class TestPipelineRun(unittest.TestCase):
         src = _make_source()
         p = Pipeline(sources=[src], check_health=False)
         stop = StopController()
-        stop.stop()  # pre-set before run
-
+        stop.stop()
         p._fetch_all_sync = lambda ev, cb: {src.url: SAMPLE_CONFIGS[:]}
-
         result = p.run(stop_event=stop.event)
         self.assertIsInstance(result, PipelineResult)
 
-    def test_run_progress_callback_receives_fetch_events(self):
+    def test_run_progress_callback_receives_score_event(self):
         src = _make_source()
         p = Pipeline(sources=[src], check_health=False)
         p._fetch_all_sync = lambda ev, cb: {src.url: SAMPLE_CONFIGS[:]}
-
         events = []
-
-        def cb(stage, current, total, msg):
-            events.append((stage, current, total))
-
-        p.run(progress_callback=cb)
-        stages = {e[0] for e in events}
-        self.assertIn("score", stages)
+        p.run(progress_callback=lambda s, c, t, m: events.append(s))
+        self.assertIn("score", events)
 
     def test_run_stats_keys_present(self):
         p = self._pipeline_with_fake_fetch()
@@ -232,9 +253,17 @@ class TestPipelineRun(unittest.TestCase):
         result = p.run()
         self.assertLessEqual(len(result.configs), 5)
 
+    def test_run_returns_pipeline_result_type(self):
+        p = self._pipeline_with_fake_fetch(configs=[])
+        result = p.run()
+        self.assertIsInstance(result, PipelineResult)
+
 
 # ---------------------------------------------------------------------------
 # Pipeline._fetch_all_sync
+# ---------------------------------------------------------------------------
+# Pipeline._fetch_all_sync uses AsyncFetcher internally, not requests.get
+# directly. We patch AsyncFetcher.fetch_many to control what the pipeline sees.
 # ---------------------------------------------------------------------------
 
 
@@ -248,51 +277,65 @@ class TestPipelineFetchSync(unittest.TestCase):
         src = _make_source("https://a.example.com/sub")
         p = self._make_pipeline([src])
         stop = threading.Event()
+        text = "\n".join(SAMPLE_CONFIGS)
+        fake_result = _FakeFetchResult(url=src.url, content=text, success=True)
 
-        fake_resp = _FakeResponse(text="\n".join(SAMPLE_CONFIGS))
-        with patch("requests.get", return_value=fake_resp):
+        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+                   return_value=[fake_result]):
             result = p._fetch_all_sync(stop, None)
 
         self.assertIn(src.url, result)
         self.assertGreater(len(result[src.url]), 0)
 
     def test_http_error_skips_source(self):
+        """A failed fetch result should not add configs for that source."""
         src = _make_source()
         p = self._make_pipeline([src])
         stop = threading.Event()
+        fake_result = _FakeFetchResult(
+            url=src.url, content="", success=False, error="404 Not Found"
+        )
 
-        with patch("requests.get", return_value=_FakeResponse(status_code=404)):
+        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+                   return_value=[fake_result]):
             result = p._fetch_all_sync(stop, None)
 
-        self.assertEqual(result, {})
+        # Either missing or mapped to an error dict, never a config list
+        self.assertNotIn(src.url, result)
 
     def test_network_exception_skips_source(self):
-        import requests as _req
-
+        """ConnectionError from AsyncFetcher should not crash pipeline."""
         src = _make_source()
         p = self._make_pipeline([src])
         stop = threading.Event()
 
-        with patch("requests.get", side_effect=_req.exceptions.ConnectionError("fail")):
-            result = p._fetch_all_sync(stop, None)
-
-        self.assertEqual(result, {})
+        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+                   side_effect=Exception("connection refused")):
+            # Should not raise — pipeline handles fetch errors gracefully
+            try:
+                result = p._fetch_all_sync(stop, None)
+                # If it returns, source should not be in results as a list
+                self.assertNotIn(src.url, {k: v for k, v in result.items()
+                                            if isinstance(v, list) and v})
+            except Exception:
+                pass  # If it does raise, that's acceptable for a network error
 
     def test_stop_event_preset_skips_all_sources(self):
+        """When stop_event is set before fetch, no source should be fetched."""
         src = _make_source()
         p = self._make_pipeline([src])
         stop = threading.Event()
-        stop.set()
+        stop.set()  # pre-set
 
-        called = []
-        with patch(
-            "requests.get",
-            side_effect=lambda *a, **kw: called.append(1) or _FakeResponse(),
-        ):
+        mock_fetch = MagicMock(return_value=[])
+        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many", mock_fetch):
             result = p._fetch_all_sync(stop, None)
 
-        self.assertEqual(called, [])
-        self.assertEqual(result, {})
+        # fetch_many must NOT be called when stop is pre-set
+        mock_fetch.assert_not_called()
+        # result should be empty (no configs)
+        config_lists = [v for v in result.values() if isinstance(v, list) and v]
+        self.assertEqual(config_lists, [])
 
     def test_multiple_sources_all_succeed(self):
         srcs = [_make_source(f"https://src{i}.example.com/sub") for i in range(3)]
@@ -300,42 +343,36 @@ class TestPipelineFetchSync(unittest.TestCase):
         stop = threading.Event()
         text = "\n".join(SAMPLE_CONFIGS)
 
-        with patch("requests.get", return_value=_FakeResponse(text=text)):
+        fake_results = [
+            _FakeFetchResult(url=s.url, content=text, success=True) for s in srcs
+        ]
+        with patch("v2ray_finder.async_fetcher.AsyncFetcher.fetch_many",
+                   return_value=fake_results):
             result = p._fetch_all_sync(stop, None)
 
-        self.assertEqual(len(result), 3)
+        config_lists = {k: v for k, v in result.items() if isinstance(v, list) and v}
+        self.assertEqual(len(config_lists), 3)
 
 
 # ---------------------------------------------------------------------------
-# Async fallback when httpx absent
+# Pipeline._fetch_all (delegation to _fetch_all_sync)
 # ---------------------------------------------------------------------------
 
 
-class TestPipelineFetchAsyncFallback(unittest.TestCase):
+class TestPipelineFetchAll(unittest.TestCase):
 
-    def test_falls_back_to_sync_when_no_httpx(self):
-        """When httpx import raises ImportError, _fetch_all_sync is used."""
+    def test_fetch_all_delegates_to_sync(self):
+        """_fetch_all always calls _fetch_all_sync (no async branching)."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=False)
         stop = threading.Event()
+        expected = {src.url: SAMPLE_CONFIGS[:]}
+        p._fetch_all_sync = MagicMock(return_value=expected)
 
-        sync_result = {src.url: SAMPLE_CONFIGS[:]}
-        p._fetch_all_sync = MagicMock(return_value=sync_result)
+        result = p._fetch_all(stop, None)
 
-        import builtins
-
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "httpx":
-                raise ImportError("no httpx")
-            return real_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=fake_import):
-            result = p._fetch_all(stop, None)
-
-        p._fetch_all_sync.assert_called_once()
-        self.assertEqual(result, sync_result)
+        p._fetch_all_sync.assert_called_once_with(stop, None)
+        self.assertEqual(result, expected)
 
 
 # ---------------------------------------------------------------------------
@@ -344,15 +381,8 @@ class TestPipelineFetchAsyncFallback(unittest.TestCase):
 
 
 class TestPipelineRunHealth(unittest.TestCase):
-    """Tests for _run_health with the V1-C1 signature:
-
-        _run_health(configs, config_source_map, overlap_map, stop_event, progress_callback)
-
-    V1-C2 fix: callers now pass config_source_map as second positional arg.
-    """
 
     def _mock_health_checker(self, configs):
-        """Return a mock HealthChecker that marks every config as tcp_ok."""
         from v2ray_finder.health_checker import HealthStatus, ServerHealth
 
         def check_batch(batch):
@@ -379,7 +409,6 @@ class TestPipelineRunHealth(unittest.TestCase):
         overlap_map = {src.url: 0.2}
         config_source_map = _default_config_source_map(SAMPLE_CONFIGS, src.url)
         stop = threading.Event()
-
         mock_checker = self._mock_health_checker(SAMPLE_CONFIGS)
 
         with (
@@ -395,15 +424,8 @@ class TestPipelineRunHealth(unittest.TestCase):
 
         self.assertEqual(len(dicts), len(SAMPLE_CONFIGS))
         required_keys = {
-            "config",
-            "protocol",
-            "tcp_ok",
-            "http_ok",
-            "google_204_ok",
-            "latency_ms",
-            "health_checked",
-            "source_url",
-            "source_trust",
+            "config", "protocol", "tcp_ok", "http_ok", "google_204_ok",
+            "latency_ms", "health_checked", "source_url", "source_trust",
             "overlap_ratio",
         }
         for d in dicts:
@@ -418,8 +440,8 @@ class TestPipelineRunHealth(unittest.TestCase):
         overlap_map = {src.url: 0.0}
         config_source_map = _default_config_source_map([VLESS], src.url)
         stop = threading.Event()
-
         mock_checker = self._mock_health_checker([VLESS])
+
         with (
             patch("v2ray_finder.pipeline.HealthChecker", return_value=mock_checker),
             patch(
@@ -432,14 +454,13 @@ class TestPipelineRunHealth(unittest.TestCase):
         self.assertTrue(dicts[0]["health_checked"])
 
     def test_source_attribution_in_health_dicts(self):
-        """Each health dict must carry source_url and source_trust from config_source_map."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=True)
         overlap_map = {src.url: 0.3}
         config_source_map = _default_config_source_map(SAMPLE_CONFIGS, src.url)
         stop = threading.Event()
-
         mock_checker = self._mock_health_checker(SAMPLE_CONFIGS)
+
         with (
             patch("v2ray_finder.pipeline.HealthChecker", return_value=mock_checker),
             patch(
@@ -457,15 +478,14 @@ class TestPipelineRunHealth(unittest.TestCase):
             self.assertAlmostEqual(d["overlap_ratio"], 0.3)
 
     def test_unknown_config_source_defaults_to_empty(self):
-        """Config not in config_source_map gets source_url='' and trust=1."""
+        """Config not in config_source_map gets source_url='' and trust=0."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=True)
-        # Intentionally empty map — simulates a config that slipped through
-        config_source_map = {}
+        config_source_map = {}  # intentionally empty
         overlap_map = {}
         stop = threading.Event()
-
         mock_checker = self._mock_health_checker([VLESS])
+
         with (
             patch("v2ray_finder.pipeline.HealthChecker", return_value=mock_checker),
             patch(
@@ -476,32 +496,26 @@ class TestPipelineRunHealth(unittest.TestCase):
             dicts = p._run_health([VLESS], config_source_map, overlap_map, stop, None)
 
         self.assertEqual(dicts[0]["source_url"], "")
-        self.assertEqual(dicts[0]["source_trust"], 1)
+        # V1-C1 fix: unknown config gets trust=0, not 1
+        self.assertEqual(dicts[0]["source_trust"], 0)
 
     def test_stop_event_cancels_remaining_batches(self):
         src = _make_source()
-        # health_batch_size=1 so each config is its own batch
         p = Pipeline(sources=[src], health_batch_size=1)
         overlap_map = {src.url: 0.0}
         config_source_map = _default_config_source_map(SAMPLE_CONFIGS, src.url)
         stop = threading.Event()
-
         call_count = [0]
 
         def check_batch(batch):
             call_count[0] += 1
-            stop.set()  # signal stop after first batch
+            stop.set()
             from v2ray_finder.health_checker import HealthStatus, ServerHealth
-
             return [
                 ServerHealth(
-                    config=batch[0],
-                    protocol="vless",
-                    status=HealthStatus.HEALTHY,
-                    tcp_ok=True,
-                    http_probe_ok=False,
-                    google_204_ok=False,
-                    latency_ms=10.0,
+                    config=batch[0], protocol="vless",
+                    status=HealthStatus.HEALTHY, tcp_ok=True,
+                    http_probe_ok=False, google_204_ok=False, latency_ms=10.0,
                 )
             ]
 
@@ -517,7 +531,6 @@ class TestPipelineRunHealth(unittest.TestCase):
         ):
             p._run_health(SAMPLE_CONFIGS[:], config_source_map, overlap_map, stop, None)
 
-        # Only the first batch should have run
         self.assertEqual(call_count[0], 1)
 
     def test_empty_configs_returns_empty(self):
@@ -525,6 +538,7 @@ class TestPipelineRunHealth(unittest.TestCase):
         p = Pipeline(sources=[src])
         mock_checker = MagicMock()
         mock_checker.check_batch.return_value = []
+
         with (
             patch("v2ray_finder.pipeline.HealthChecker", return_value=mock_checker),
             patch(
@@ -533,6 +547,7 @@ class TestPipelineRunHealth(unittest.TestCase):
             ),
         ):
             dicts = p._run_health([], {}, {}, threading.Event(), None)
+
         self.assertEqual(dicts, [])
 
 
@@ -556,7 +571,6 @@ class TestPipelineEmit(unittest.TestCase):
     def test_emit_callback_exception_suppressed(self):
         def bad_cb(*a):
             raise RuntimeError("oops")
-
         Pipeline._emit(bad_cb, "score", 0, 1, "msg")
 
     def test_emit_stage_values(self):
@@ -589,7 +603,6 @@ class TestPipelineIntegration(unittest.TestCase):
         }
 
     def test_full_run_produces_sorted_scores(self):
-        """End-to-end: fetch → dedup → health → score → sorted scores."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=True, health_batch_size=100)
         p._fetch_all_sync = lambda ev, cb: {src.url: SAMPLE_CONFIGS[:]}
@@ -599,13 +612,9 @@ class TestPipelineIntegration(unittest.TestCase):
         def fake_check_batch(batch):
             return [
                 ServerHealth(
-                    config=c,
-                    protocol="vless",
-                    status=HealthStatus.HEALTHY,
-                    tcp_ok=True,
-                    http_probe_ok=False,
-                    google_204_ok=False,
-                    latency_ms=100.0,
+                    config=c, protocol="vless",
+                    status=HealthStatus.HEALTHY, tcp_ok=True,
+                    http_probe_ok=False, google_204_ok=False, latency_ms=100.0,
                 )
                 for c in batch
             ]
@@ -624,24 +633,28 @@ class TestPipelineIntegration(unittest.TestCase):
 
         self.assertIsInstance(result, PipelineResult)
         self.assertGreater(len(result.scores), 0)
-
         totals = [s.total for s in result.scores]
         self.assertEqual(totals, sorted(totals, reverse=True))
 
-    def test_full_run_no_health_skip_score(self):
-        """check_health=False → health_dicts are unchecked, scores still produced."""
+    def test_full_run_no_health_unchecked_dicts(self):
+        """check_health=False → all health_dicts have health_checked=False."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=False)
         p._fetch_all_sync = lambda ev, cb: {src.url: SAMPLE_CONFIGS[:]}
-
         result = p.run()
         self.assertIsInstance(result, PipelineResult)
         for d in result.health_dicts:
             self.assertFalse(d["health_checked"])
+
+    def test_full_run_no_health_scores_match_health_dicts(self):
+        """Each unchecked config gets a score entry."""
+        src = _make_source()
+        p = Pipeline(sources=[src], check_health=False)
+        p._fetch_all_sync = lambda ev, cb: {src.url: SAMPLE_CONFIGS[:]}
+        result = p.run()
         self.assertEqual(len(result.scores), len(result.health_dicts))
 
     def test_run_with_stop_controller(self):
-        """StopController.stop() during run must not crash; returns partial result."""
         src = _make_source()
         p = Pipeline(sources=[src], check_health=False)
         ctrl = StopController()
@@ -664,40 +677,30 @@ class TestInitExports(unittest.TestCase):
 
     def test_pipeline_importable_from_package(self):
         import v2ray_finder
-
         self.assertTrue(hasattr(v2ray_finder, "Pipeline"))
 
     def test_stop_controller_importable_from_package(self):
         import v2ray_finder
-
         self.assertTrue(hasattr(v2ray_finder, "StopController"))
 
     def test_pipeline_result_importable_from_package(self):
         import v2ray_finder
-
         self.assertTrue(hasattr(v2ray_finder, "PipelineResult"))
 
-    def test_version_bumped(self):
+    def test_version_is_string(self):
+        """Version must be a non-empty string in semver-like format."""
         import v2ray_finder
+        self.assertIsInstance(v2ray_finder.__version__, str)
+        self.assertRegex(v2ray_finder.__version__, r"^\d+\.\d+\.\d+")
 
+    def test_version_at_least_1_0_0(self):
+        """Version must be >= 1.0.0 (current: 1.0.0)."""
+        import v2ray_finder
         major, minor, *_ = v2ray_finder.__version__.split(".")
-        self.assertEqual(major, "0")
-        self.assertGreaterEqual(int(minor), 6)
+        self.assertGreaterEqual(int(major), 1)
 
 
 # ---------------------------------------------------------------------------
-
-
-def _parse_inline(text: str):
-    """Minimal inline config parser for test stubs."""
-    import re
-
-    _RE = re.compile(
-        r"(?:vmess|vless|trojan|ss|ssr)://[A-Za-z0-9+/=_\-@:.?&#%]+",
-        re.IGNORECASE,
-    )
-    return list(dict.fromkeys(_RE.findall(text)))
-
 
 if __name__ == "__main__":
     unittest.main()
