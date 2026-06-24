@@ -22,6 +22,8 @@ A **high-performance** tool to **fetch, aggregate, validate and health-check pub
 A community .NET/C# port is available at [v2ray-finder-dotnet](https://github.com/rkarimabadi/v2ray-finder-dotnet) — contributed by [@rkarimabadi](https://github.com/rkarimabadi).\
 Each implementation is self-contained. You can use either one independently.
 
+A community Android mobile UI (Kivy) is available on the [`feature/android-kivy-ui`](https://github.com/alisadeghiaghili/v2ray-finder/tree/feature/android-kivy-ui) branch — contributed by [@mehdimt1980](https://github.com/mehdimt1980).
+
 ---
 
 ## 🚀 What's New in v0.7.0
