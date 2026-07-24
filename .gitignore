@@ -139,3 +139,22 @@ v2ray_servers.txt
 *.txt
 !requirements.txt
 backup_old/
+
+# MiMoCode
+.mimocode/
+
+# Android
+android_app/build/
+android_app/app/build/
+android_app/.gradle/
+android_app/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Gradle
+.gradle/
+android_app/gradle/
+android_app/gradlew
+android_app/gradlew.bat

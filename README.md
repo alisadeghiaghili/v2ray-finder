@@ -1,112 +1,79 @@
 # v2ray-finder
 
-[![PyPI version](https://badge.fury.io/py/v2ray-finder.svg)](https://badge.fury.io/py/v2ray-finder)
+[![PyPI version](https://badge.fury.io/py/v2ray-finder.svg)](https://pypi.org/project/v2ray-finder/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/v2ray-finder.svg)](https://pypi.org/project/v2ray-finder/)
-[![Tests](https://github.com/alisadeghiaghili/v2ray-finder/workflows/Tests/badge.svg)](https://github.com/alisadeghiaghili/v2ray-finder/actions)
-[![Code Quality](https://github.com/alisadeghiaghili/v2ray-finder/workflows/Code%20Quality/badge.svg)](https://github.com/alisadeghiaghili/v2ray-finder/actions)
-[![Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen.svg)](#-test-coverage)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub Stars](https://img.shields.io/github/stars/alisadeghiaghili/v2ray-finder?style=flat)](https://github.com/alisadeghiaghili/v2ray-finder/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/alisadeghiaghili/v2ray-finder?style=flat)](https://github.com/alisadeghiaghili/v2ray-finder/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/alisadeghiaghili/v2ray-finder)](https://github.com/alisadeghiaghili/v2ray-finder/issues)
-[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://github.com/rkarimabadi/v2ray-finder-dotnet)
-[![Blazor](https://img.shields.io/badge/Blazor-WebAssembly-512BD4?logo=blazor)](https://github.com/rkarimabadi/v2ray-finder-dotnet)
-[![Android](https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white)](https://github.com/alisadeghiaghili/v2ray-finder/tree/android)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/alisadeghiaghili/v2ray-finder/pulls)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-[فارسی](README.fa.md) | [English](README.en.md) | [Deutsch](README.de.md) | [📋 CHANGELOG](CHANGELOG.md)
+**Advanced V2Ray/Xray config finder with anti-censorship intelligence and VPN connection.**
 
 ---
 
-**Fetch, aggregate, validate, health-check, and rank public V2Ray/Xray configs** — from GitHub repos and curated subscription sources — in one pipeline.
+## Features
 
-Built with love for eternal freedom ❤️
+- **Find** configs from 30+ sources (GitHub, Telegram, subscriptions)
+- **Test** with TCP, HTTP, and xray health checks
+- **Score** with 8 dimensions including anti-censorship
+- **Connect** with one click as a VPN
+- **IPv6** support
+- **Anti-censorship** levels 1-5 (Reality, XTLS, etc.)
 
----
-
-## ✨ Features
-
-- 🔍 **Multi-source aggregation** — GitHub repos + subscription URLs, deduplicated automatically
-- ✅ **Health checking** — TCP, HTTP probe, and Google-204 connectivity tests
-- 🏆 **Scoring & grading** — configs ranked A–F by latency, stability, and protocol
-- ⚡ **Concurrent** — async fetch with configurable concurrency
-- 🛑 **Stop controller** — graceful cancellation at any pipeline stage
-- 🖥️ **GUI included** — desktop UI with progress bar, score/grade/latency columns, failed sources panel
-- 📱 **Android app** — Kivy-based mobile UI on the [`android`](https://github.com/alisadeghiaghili/v2ray-finder/tree/android) branch
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-pip install v2ray-finder                # core
-pip install "v2ray-finder[async]"       # + httpx for concurrent fetch
-pip install "v2ray-finder[all]"         # everything
+# Install
+pip install v2ray-finder
+
+# Connect to best server
+v2ray-finder connect --auto
+
+# Or with anti-censorship filter
+v2ray-finder connect --anti-censorship-level 4
 ```
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `v2ray-finder connect` | Connect to a V2Ray/Xray server |
+| `v2ray-finder disconnect` | Disconnect from VPN |
+| `v2ray-finder status` | Show VPN status |
+| `v2ray-finder list` | List available servers |
+| `v2ray-finder discover` | Discover and score configs |
+
+## Anti-Censorship Levels
+
+| Level | Protocol | Score | Description |
+|-------|----------|-------|-------------|
+| 5 (Maximum) | VLESS+Reality, VLESS+XTLS-Vision | 1.0 | Nearly undetectable |
+| 4 (Strong) | WS+TLS, gRPC+TLS | 0.8 | Hard to block |
+| 3 (Good) | mKCP, H2+TLS | 0.6 | Moderate obfuscation |
+| 2 (Basic) | Standard TLS | 0.4 | Encrypted but identifiable |
+| 1 (Weak) | Plain TCP | 0.1 | Easily detected |
+
+## Python API
 
 ```python
-from v2ray_finder import Pipeline
+import v2ray_finder
 
-pipeline = Pipeline(check_health=True)
-result = pipeline.run()
+# Find servers
+configs = v2ray_finder.find_servers(limit=10)
 
-for score in result.scores[:5]:
-    print(score.grade, score.total, score.config[:80])
+# Connect to best server
+vpn = v2ray_finder.connect_vpn(configs[0])
+print(f"Connected: {vpn.socks_proxy}")
+
+# Disconnect
+vpn.disconnect()
 ```
 
-With a stop button and progress callback:
+## Documentation
 
-```python
-from v2ray_finder import Pipeline, StopController
+- [Getting Started](https://alisadeghiaghili.github.io/v2ray-finder/getting-started/installation/)
+- [VPN Connection](https://alisadeghiaghili.github.io/v2ray-finder/features/vpn-connection/)
+- [Anti-Censorship Guide](https://alisadeghiaghili.github.io/v2ray-finder/features/anti-censorship/)
+- [CLI Reference](https://alisadeghiaghili.github.io/v2ray-finder/reference/cli-reference/)
+- [Python API](https://alisadeghiaghili.github.io/v2ray-finder/reference/api-reference/)
 
-stop = StopController()
-
-def on_progress(stage, current, total, message):
-    print(f"[{stage}] {current}/{total} — {message}")
-
-pipeline = Pipeline(check_health=True, limit=500)
-result = pipeline.run(stop_event=stop.event, progress_callback=on_progress)
-```
-
----
-
-## 🌐 Community Ports
-
-| Platform | Repo | Maintainer | Status |
-|---|---|---|---|
-| **.NET / C#** | [v2ray-finder-dotnet](https://github.com/rkarimabadi/v2ray-finder-dotnet) | [@rkarimabadi](https://github.com/rkarimabadi) | Active |
-| **Blazor WebAssembly** | [v2ray-finder-dotnet](https://github.com/rkarimabadi/v2ray-finder-dotnet) | [@rkarimabadi](https://github.com/rkarimabadi) | Active |
-| **Android (Kivy)** | [`android` branch](https://github.com/alisadeghiaghili/v2ray-finder/tree/android) | [@mehdimt1980](https://github.com/mehdimt1980) | Active |
-
-Each implementation is self-contained — use any one independently.
-
----
-
-## 📦 What's New in v0.7.0
-
-- 🛡️ **Structured error model** — `FetchResult.structured_error` with `category / kind / message` hierarchy
-- 🔄 **xray Layer-3 port-contention retry** — auto-retry on a fresh OS port when xray fails to bind
-- 🖥️ **GUI fully migrated to Pipeline** — stop button, real progress bar, score/grade/latency columns, failed sources panel
-
-See the full [CHANGELOG](CHANGELOG.md) for all changes.
-
----
-
-## 🧪 Test Coverage
-
-~85% coverage across **Python 3.8–3.12** on Linux, macOS, and Windows.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please open an issue first to discuss what you'd like to change.  
-See [CONTRIBUTING.md](CONTRIBUTING.md) if it exists, or just open a PR.
-
----
-
-## 📝 License
+## License
 
 Apache License 2.0 © 2026 Ali Sadeghi Aghili
-
-Any derivative work, port, or redistribution must retain the [`NOTICE`](NOTICE) file and credit the original author. See [`LICENSE`](LICENSE) for full terms.

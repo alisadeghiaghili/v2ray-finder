@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#1976D2</color>
+    <color name="primary_dark">#1565C0</color>
+    <color name="accent">#FFC107</color>
+    <color name="background">#F5F5F5</color>
+    <color name="card_background">#FFFFFF</color>
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#666666</color>
+    
+    <!-- Anti-censorship grades -->
+    <color name="grade_a_plus">#4CAF50</color>
+    <color name="grade_a">#8BC34A</color>
+    <color name="grade_b">#FFC107</color>
+    <color name="grade_c">#FF9800</color>
+    <color name="grade_d">#F44336</color>
+</resources>

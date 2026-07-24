@@ -4,21 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "v2ray-finder"
-version = "1.0.0"
-description = "Search and collect V2Ray servers from GitHub repositories"
+version = "2.0.0"
+description = "Advanced V2Ray/Xray config finder with anti-censorship intelligence, IPv6 support, and environment detection"
 readme = "README.md"
 authors = [
     {name = "Ali Sadeghi Aghili", email = "alisadeghiaghili@gmail.com"}
 ]
-license = {text = "MIT"}
-requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -26,9 +24,14 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Topic :: Internet",
+    "Topic :: Security",
     "Topic :: Utilities",
 ]
-keywords = ["v2ray", "proxy", "vpn", "github", "vmess", "vless", "trojan", "shadowsocks", "subscription"]
+keywords = [
+    "v2ray", "xray", "proxy", "vpn", "anti-censorship", "reality",
+    "xtls", "ipv6", "github", "vmess", "vless", "trojan",
+    "shadowsocks", "subscription", "gfw", "dpi",
+]
 dependencies = [
     "requests>=2.31.0",
 ]
@@ -37,16 +40,20 @@ dependencies = [
 gui = ["PySide6>=6.4.0"]
 "cli-rich" = ["rich>=13.7.0"]
 async = [
-    "aiohttp>=3.8.0",
+    "aiohttp>=3.9.0",
     "httpx>=0.24.0",
 ]
 cache = [
     "diskcache>=5.6.0",
 ]
+anti-censorship = [
+    "aiohttp>=3.9.0",
+    "httpx>=0.24.0",
+]
 all = [
     "PySide6>=6.4.0",
     "rich>=13.7.0",
-    "aiohttp>=3.8.0",
+    "aiohttp>=3.9.0",
     "httpx>=0.24.0",
     "diskcache>=5.6.0",
 ]
@@ -58,7 +65,7 @@ dev = [
     "flake8>=6.0",
     "mypy>=1.0",
     "isort>=5.12",
-    "aiohttp>=3.8.0",
+    "aiohttp>=3.9.0",
     "httpx>=0.24.0",
     "diskcache>=5.6.0",
 ]
@@ -71,6 +78,7 @@ Issues = "https://github.com/alisadeghiaghili/v2ray-finder/issues"
 
 [project.scripts]
 v2ray-finder = "v2ray_finder.cli:main"
+v2ray-vpn = "v2ray_finder.cli:main"
 "v2ray-finder-rich" = "v2ray_finder.cli_rich:main"
 "v2ray-finder-gui" = "v2ray_finder.gui.main_window:launch"
 
@@ -104,7 +112,7 @@ profile = "black"
 line_length = 88
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -115,5 +123,9 @@ module = [
     "v2ray_finder.scorer",
     "v2ray_finder.cache",
     "v2ray_finder.async_fetcher",
+    "v2ray_finder.anti_censorship",
+    "v2ray_finder.environment",
+    "v2ray_finder.config_generator",
+    "v2ray_finder.clash_parser",
 ]
 disallow_untyped_defs = true

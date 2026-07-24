@@ -337,6 +337,7 @@ class Pipeline:
         cache_ttl: int = _DEFAULT_CACHE_TTL,
         cache_dir: Optional[str] = None,
         cache_manager: Optional[CacheManager] = None,
+        anti_censorship_level: int = 0,
     ) -> None:
         self.sources = sources or get_enabled_sources()
         self.check_health = check_health
@@ -369,6 +370,7 @@ class Pipeline:
             s.url: s.trust.value for s in self.sources
         }
         self._health_checker: Optional[Any] = None
+        self.anti_censorship_level = anti_censorship_level
 
     # ------------------------------------------------------------------
     # V1-Q4: cache management
@@ -457,6 +459,10 @@ class Pipeline:
 
         if self.limit:
             configs = configs[: self.limit]
+
+        # Anti-censorship filtering
+        if self.anti_censorship_level > 0:
+            configs = self._filter_by_anti_censorship(configs)
 
         stats["deduped"] = len(configs)
         result.configs = configs
@@ -828,6 +834,44 @@ class Pipeline:
                 }
             )
         return result_dicts
+
+    # ------------------------------------------------------------------
+    # Anti-censorship filtering
+    # ------------------------------------------------------------------
+
+    def _filter_by_anti_censorship(self, configs: List[str]) -> List[str]:
+        """Filter configs by anti-censorship level.
+
+        Args:
+            configs: List of config URI strings.
+
+        Returns:
+            Filtered list containing only configs meeting the minimum level.
+        """
+        try:
+            from .anti_censorship import scan_config, AntiCensorshipLevel
+
+            min_level = AntiCensorshipLevel(self.anti_censorship_level)
+            filtered: List[str] = []
+            for config in configs:
+                result = scan_config(config)
+                if result.level >= min_level:
+                    filtered.append(config)
+            logger.info(
+                "[pipeline] Anti-censorship filter: %d → %d configs (level ≥ %d)",
+                len(configs),
+                len(filtered),
+                self.anti_censorship_level,
+            )
+            return filtered
+        except ImportError:
+            logger.warning(
+                "[pipeline] Anti-censorship module unavailable, skipping filter."
+            )
+            return configs
+        except Exception as exc:
+            logger.warning("[pipeline] Anti-censorship filter error: %s", exc)
+            return configs
 
     # ------------------------------------------------------------------
     # Utility

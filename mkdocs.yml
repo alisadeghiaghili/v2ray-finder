@@ -1,0 +1,82 @@
+site_name: v2ray-finder
+site_description: Advanced V2Ray/Xray config finder with anti-censorship intelligence
+site_url: https://alisadeghiaghili.github.io/v2ray-finder/
+
+repo_name: alisadeghiaghili/v2ray-finder
+repo_url: https://github.com/alisadeghiaghili/v2ray-finder
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tabs.link
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+    - Configuration: getting-started/configuration.md
+  - Features:
+    - VPN Connection: features/vpn-connection.md
+    - Anti-Censorship: features/anti-censorship.md
+    - IPv6 Support: features/ipv6-support.md
+    - Auto-Selection: features/auto-selection.md
+  - Guides:
+    - Windows Setup: guides/windows-setup.md
+    - Linux Setup: guides/linux-setup.md
+    - macOS Setup: guides/macos-setup.md
+  - Reference:
+    - CLI Commands: reference/cli-reference.md
+    - Python API: reference/api-reference.md
+    - Configuration: reference/configuration.md
+  - Advanced:
+    - Architecture: advanced/architecture.md
+    - Troubleshooting: advanced/troubleshooting.md
+    - Contributing: advanced/contributing.md
+  - Changelog: changelog.md
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/alisadeghiaghili/v2ray-finder
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/v2ray-finder/

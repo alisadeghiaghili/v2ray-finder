@@ -5,6 +5,16 @@ Supported URI schemes: vmess, vless, trojan, ss (Shadowsocks).
 The generated config uses a SOCKS5 inbound on 127.0.0.1:<socks_port>
 and routes all traffic through the specified outbound.
 
+Full protocol support:
+    - VLESS + Reality (maximum anti-censorship)
+    - VLESS + XTLS-Vision (fastest anti-DPI)
+    - VLESS + WebSocket + TLS
+    - VLESS + gRPC + TLS
+    - VLESS + mKCP + Seed
+    - VMess + TLS/XTLS
+    - Trojan + TLS
+    - Shadowsocks
+
 Usage::
 
     adapter = ConfigAdapter(log_level="none")
@@ -37,10 +47,25 @@ class UnsupportedProtocolError(ValueError):
 class ConfigAdapter:
     """Convert proxy URI strings to xray JSON config dicts.
 
+    Supports all major V2Ray/Xray protocols including Reality and XTLS.
+
     Args:
         log_level: Xray log level injected into the generated config under
                    ``log.loglevel``.  Valid values: "none", "error",
                    "warning", "info", "debug".  Defaults to "warning".
+
+    Examples::
+
+        adapter = ConfigAdapter(log_level="none")
+
+        # Reality protocol (maximum anti-censorship)
+        cfg = adapter.build_config(
+            "vless://uuid@host:443?security=reality&pbk=xxx&sid=yyy&sni=example.com",
+            socks_port=10808,
+        )
+
+        # Standard VMess
+        cfg = adapter.build_config("vmess://...", socks_port=10808)
     """
 
     SUPPORTED = frozenset({"vmess", "vless", "trojan", "ss"})
@@ -50,6 +75,13 @@ class ConfigAdapter:
 
     def build_config(self, uri: str, socks_port: int = 10808) -> Dict[str, Any]:
         """Convert *uri* to an xray config dict.
+
+        Args:
+            uri: V2Ray/Xray config URI string.
+            socks_port: Local SOCKS5 port for the inbound.
+
+        Returns:
+            Xray JSON configuration dict.
 
         Raises:
             UnsupportedProtocolError: if the URI scheme is not supported.
@@ -69,6 +101,13 @@ class ConfigAdapter:
         """Context manager: yield path to a temporary xray config file.
 
         The file is automatically deleted on exit.
+
+        Args:
+            uri: V2Ray/Xray config URI string.
+            socks_port: Local SOCKS5 port for the inbound.
+
+        Yields:
+            Path to the temporary xray config file.
         """
         cfg = self.build_config(uri, socks_port=socks_port)
         fd, path = tempfile.mkstemp(suffix=".json", prefix="xray_cfg_")
@@ -88,9 +127,18 @@ class ConfigAdapter:
 # ---------------------------------------------------------------------------
 
 
-def _socks_inbound(local_port: int) -> Dict:
+def _socks_inbound(local_port: int, listen: str = "127.0.0.1") -> Dict:
+    """Build SOCKS5 inbound config.
+
+    Args:
+        local_port: Port to listen on.
+        listen: Address to listen on. Use "::" for IPv6.
+
+    Returns:
+        Xray inbound config dict.
+    """
     return {
-        "listen": "127.0.0.1",
+        "listen": listen,
         "port": local_port,
         "protocol": "socks",
         "settings": {"auth": "noauth", "udp": True},
@@ -98,9 +146,19 @@ def _socks_inbound(local_port: int) -> Dict:
     }
 
 
-def _base_config(outbound: Dict, local_port: int) -> Dict:
+def _base_config(outbound: Dict, local_port: int, listen: str = "127.0.0.1") -> Dict:
+    """Build base xray config with inbound, outbound, and routing.
+
+    Args:
+        outbound: Outbound config dict.
+        local_port: Local SOCKS5 port.
+        listen: Address to listen on.
+
+    Returns:
+        Complete xray config dict.
+    """
     return {
-        "inbounds": [_socks_inbound(local_port)],
+        "inbounds": [_socks_inbound(local_port, listen)],
         "outbounds": [outbound],
         "routing": {
             "domainStrategy": "IPIfNonMatch",
@@ -112,6 +170,16 @@ def _base_config(outbound: Dict, local_port: int) -> Dict:
 
 
 def _stream_settings_vmess(info: dict) -> Dict:
+    """Build stream settings for VMess protocol.
+
+    Handles all transport types: tcp, ws, grpc, h2, mkcp.
+
+    Args:
+        info: Decoded VMess JSON payload.
+
+    Returns:
+        Stream settings dict.
+    """
     network = info.get("net", "tcp")
     tls = info.get("tls", "")
     settings: Dict[str, Any] = {"network": network}
@@ -133,20 +201,64 @@ def _stream_settings_vmess(info: dict) -> Dict:
             "host": [info.get("host", "")],
             "path": info.get("path", "/"),
         }
+    elif network in ("mkcp", "kcp"):
+        settings["kcpSettings"] = {
+            "seed": info.get("seed", ""),
+            "header": {"type": info.get("type", "none")},
+        }
     return settings
 
 
 def _stream_settings_qs(qs: dict, parsed: Any) -> Dict:
+    """Build stream settings from query string parameters.
+
+    Handles Reality, XTLS, TLS, WebSocket, gRPC, mKCP, H2.
+
+    Args:
+        qs: Parsed query string dict.
+        parsed: Parsed URL object.
+
+    Returns:
+        Stream settings dict.
+    """
     network = qs.get("type", ["tcp"])[0]
     security = qs.get("security", ["none"])[0]
+    flow = qs.get("flow", [""])[0]
     settings: Dict[str, Any] = {"network": network}
-    if security in ("tls", "xtls", "reality"):
+
+    # --- Reality protocol (maximum anti-censorship) ---
+    if security == "reality":
+        settings["security"] = "reality"
+        sni = qs.get("sni", [""])[0] or (parsed.hostname or "")
+        settings["realitySettings"] = {
+            "serverName": sni,
+            "fingerprint": qs.get("fp", ["chrome"])[0],
+            "publicKey": qs.get("pbk", [""])[0],
+            "shortId": qs.get("sid", [""])[0],
+            "spiderX": qs.get("spx", [""])[0],
+        }
+
+    # --- XTLS-Vision protocol ---
+    elif "xtls" in flow:
+        settings["security"] = "xtls"
+        sni = qs.get("sni", [""])[0] or (parsed.hostname or "")
+        settings["xtlsSettings"] = {
+            "serverName": sni,
+            "fingerprint": qs.get("fp", ["chrome"])[0],
+        }
+        # flow is already set in the outbound users section
+
+    # --- Standard TLS ---
+    elif security in ("tls", "xtls"):
         settings["security"] = security
         sni = qs.get("sni", [""])[0] or (parsed.hostname or "")
         settings["tlsSettings"] = {
             "serverName": sni,
             "allowInsecure": qs.get("allowInsecure", ["0"])[0] == "1",
+            "fingerprint": qs.get("fp", ["chrome"])[0],
         }
+
+    # --- Transport-specific settings ---
     if network == "ws":
         settings["wsSettings"] = {
             "path": qs.get("path", ["/"])[0],
@@ -159,10 +271,25 @@ def _stream_settings_qs(qs: dict, parsed: Any) -> Dict:
             "host": [qs.get("host", [""])[0]],
             "path": qs.get("path", ["/"])[0],
         }
+    elif network in ("mkcp", "kcp"):
+        settings["kcpSettings"] = {
+            "seed": qs.get("seed", [""])[0],
+            "header": {"type": qs.get("header", ["none"])[0]},
+        }
+
     return settings
 
 
 def _build_vmess(uri: str, local_port: int) -> Dict:
+    """Build xray config for VMess protocol.
+
+    Args:
+        uri: vmess:// URI string.
+        local_port: Local SOCKS5 port.
+
+    Returns:
+        Xray config dict.
+    """
     encoded = uri[len("vmess://") :]
     padded = encoded + "=" * (-len(encoded) % 4)
     info = json.loads(base64.urlsafe_b64decode(padded))
@@ -189,8 +316,21 @@ def _build_vmess(uri: str, local_port: int) -> Dict:
 
 
 def _build_vless(uri: str, local_port: int) -> Dict:
+    """Build xray config for VLESS protocol.
+
+    Supports Reality, XTLS-Vision, TLS, WebSocket, gRPC, mKCP.
+
+    Args:
+        uri: vless:// URI string.
+        local_port: Local SOCKS5 port.
+
+    Returns:
+        Xray config dict.
+    """
     parsed = urlparse(uri)
     qs = parse_qs(parsed.query)
+    flow = qs.get("flow", [""])[0]
+
     outbound = {
         "protocol": "vless",
         "settings": {
@@ -202,7 +342,7 @@ def _build_vless(uri: str, local_port: int) -> Dict:
                         {
                             "id": parsed.username or "",
                             "encryption": qs.get("encryption", ["none"])[0],
-                            "flow": qs.get("flow", [""])[0],
+                            "flow": flow,
                         }
                     ],
                 }
@@ -214,6 +354,15 @@ def _build_vless(uri: str, local_port: int) -> Dict:
 
 
 def _build_trojan(uri: str, local_port: int) -> Dict:
+    """Build xray config for Trojan protocol.
+
+    Args:
+        uri: trojan:// URI string.
+        local_port: Local SOCKS5 port.
+
+    Returns:
+        Xray config dict.
+    """
     parsed = urlparse(uri)
     qs = parse_qs(parsed.query)
     outbound = {
@@ -233,6 +382,15 @@ def _build_trojan(uri: str, local_port: int) -> Dict:
 
 
 def _build_ss(uri: str, local_port: int) -> Dict:
+    """Build xray config for Shadowsocks protocol.
+
+    Args:
+        uri: ss:// URI string.
+        local_port: Local SOCKS5 port.
+
+    Returns:
+        Xray config dict.
+    """
     rest = uri[len("ss://") :]
     if "#" in rest:
         rest = rest.split("#", 1)[0]
@@ -288,7 +446,28 @@ _BUILDERS = {
 
 
 def config_to_xray(uri: str, local_port: int = 10808) -> Dict[str, Any]:
-    """Low-level helper: convert a proxy URI to an xray config dict."""
+    """Convert a proxy URI string to an xray JSON config dict.
+
+    This is the main entry point for config generation. It parses the URI
+    and delegates to the appropriate protocol builder.
+
+    Args:
+        uri: V2Ray/Xray config URI string.
+        local_port: Local SOCKS5 port for the inbound.
+
+    Returns:
+        Complete xray JSON configuration dict.
+
+    Raises:
+        UnsupportedProtocolError: if the URI scheme is not supported.
+        ValueError: if the URI cannot be parsed.
+
+    Examples::
+
+        >>> cfg = config_to_xray("vmess://...", local_port=10808)
+        >>> cfg["inbounds"][0]["port"]
+        10808
+    """
     scheme = uri.split("://", 1)[0].lower() if "://" in uri else ""
     builder = _BUILDERS.get(scheme)
     if builder is None:

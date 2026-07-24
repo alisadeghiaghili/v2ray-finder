@@ -1,16 +1,28 @@
 """Command-line interface for v2ray-finder.
 
-Both the non-interactive path (``-o`` / ``--stats-only``, V1-A1) and the
-interactive menu (V1-A2) are wired through :class:`~pipeline.Pipeline`.
-:class:`~core.V2RayServerFinder` is no longer imported here.
+Provides both VPN connection commands and config discovery commands.
+
+VPN Commands:
+    v2ray-finder connect          Connect to best server
+    v2ray-finder connect --config Connect to specific server
+    v2ray-finder disconnect       Disconnect from VPN
+    v2ray-finder status           Show VPN status
+    v2ray-finder list             List available servers
+
+Discovery Commands:
+    v2ray-finder discover         Find and score configs
+    v2ray-finder discover -o      Save configs to file
+    v2ray-finder discover --stats Show statistics only
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import sys
+import time
 from datetime import datetime
 from getpass import getpass
 from typing import Any, Dict, List, Optional
@@ -50,51 +62,8 @@ def print_stats(
     if pipeline_stats:
         print("\nPipeline stats:")
         for k, v in pipeline_stats.items():
-            if v:  # skip zero counters
+            if v:
                 print(f"  {k}: {v}")
-
-    if show_health and servers and isinstance(servers[0], dict):
-        healthy = sum(1 for s in servers if s.get("health_status") == "healthy")
-        degraded = sum(1 for s in servers if s.get("health_status") == "degraded")
-        unreachable = sum(1 for s in servers if s.get("health_status") == "unreachable")
-        invalid = sum(1 for s in servers if s.get("health_status") == "invalid")
-        print("\nHealth status:")
-        print(f"  Healthy:     {healthy}")
-        print(f"  Degraded:    {degraded}")
-        print(f"  Unreachable: {unreachable}")
-        print(f"  Invalid:     {invalid}")
-        if healthy:
-            avg_quality = (
-                sum(
-                    s.get("quality_score", 0)
-                    for s in servers
-                    if s.get("health_status") == "healthy"
-                )
-                / healthy
-            )
-            avg_latency = (
-                sum(
-                    s.get("latency_ms", 0)
-                    for s in servers
-                    if s.get("health_status") == "healthy"
-                )
-                / healthy
-            )
-            print(f"\nAverage quality (healthy): {avg_quality:.1f}/100")
-            print(f"Average latency (healthy): {avg_latency:.1f}ms")
-
-    if show_xray and servers and isinstance(servers[0], dict):
-        reachable = sum(1 for s in servers if s.get("reachable"))
-        g204 = sum(1 for s in servers if s.get("google_204_ok"))
-        print("\nxray real-connectivity results:")
-        print(f"  Reachable (proxy): {reachable}/{len(servers)}")
-        print(f"  Google 204 OK:     {g204}/{len(servers)}")
-        if reachable:
-            avg_lat = (
-                sum(s.get("latency_ms") or 0 for s in servers if s.get("reachable"))
-                / reachable
-            )
-            print(f"  Avg real latency:  {avg_lat:.1f}ms")
 
 
 def prompt_for_token() -> Optional[str]:
@@ -107,7 +76,7 @@ def prompt_for_token() -> Optional[str]:
         print("\nPaste your GitHub token (input will be hidden):")
         token = getpass("Token: ").strip()
         if token:
-            print("[\u2713] Token received\n")
+            print("[✓] Token received\n")
             return token
         print("[!] No token provided, continuing without authentication\n")
         return None
@@ -125,9 +94,7 @@ def save_results(configs: List[str], filename: str, *, partial: bool = False) ->
         with open(filename, "w", encoding="utf-8") as fh:
             for cfg in configs:
                 fh.write(f"{cfg}\n")
-        print(f"\n[\u2713] Saved {len(configs)} {label}servers to {filename}")
-        if partial:
-            print("    You can resume or use these servers.\n")
+        print(f"\n[✓] Saved {len(configs)} {label}servers to {filename}")
     except OSError as exc:
         print(f"\n[!] Failed to save results: {exc}\n")
 
@@ -137,6 +104,211 @@ def _configs_from_result(result: PipelineResult) -> List[str]:
     if result.scores:
         return result.top_configs
     return result.configs
+
+
+# ---------------------------------------------------------------------------
+# VPN Commands
+# ---------------------------------------------------------------------------
+
+
+def _cmd_connect(args: argparse.Namespace) -> int:
+    """Connect to a V2Ray/Xray server."""
+    from .vpn_manager import VPNManager
+
+    print("=== v2ray-finder VPN ===\n")
+
+    # Get config
+    config = args.config
+    if not config:
+        print("Finding best server...")
+        pipeline = Pipeline(
+            check_health=True,
+            anti_censorship_level=args.anti_censorship_level,
+            limit=10,
+        )
+        result = pipeline.run()
+        configs = _configs_from_result(result)
+
+        if not configs:
+            print("[!] No servers found")
+            return 1
+
+        if args.auto:
+            # Auto-select best server
+            config = configs[0]
+            print(f"[✓] Auto-selected: {config[:60]}...")
+        else:
+            # Interactive selection
+            print(f"\nFound {len(configs)} servers:\n")
+            for i, cfg in enumerate(configs[:10], 1):
+                proto = cfg.split("://")[0].upper() if "://" in cfg else "???"
+                print(f" {i:2d}. [{proto:8s}] {cfg[:70]}...")
+
+            try:
+                choice = input(f"\nSelect server (1-{min(len(configs), 10)}): ").strip()
+                idx = int(choice) - 1
+                if 0 <= idx < len(configs):
+                    config = configs[idx]
+                else:
+                    print("[!] Invalid selection")
+                    return 1
+            except (ValueError, EOFError):
+                print("[!] Invalid input")
+                return 1
+
+    # Connect
+    print(f"\nConnecting to {config[:60]}...")
+
+    vpn = VPNManager(
+        set_system_proxy=not args.no_proxy,
+        auto_reconnect=args.auto_reconnect,
+    )
+
+    status = vpn.connect(
+        config,
+        socks_port=args.socks_port,
+        http_port=args.http_port,
+    )
+
+    if status.connected:
+        print("\n[✓] VPN Connected!")
+        print(f"    Server: {config[:80]}...")
+        print(f"    SOCKS5: {status.socks_proxy}")
+        if status.http_proxy:
+            print(f"    HTTP:   {status.http_proxy}")
+        if status.latency_ms:
+            print(f"    Latency: {status.latency_ms:.0f}ms")
+        print(f"    PID:    {status.pid}")
+
+        if not args.no_proxy:
+            print("\n    System proxy configured. Applications will use the VPN.")
+
+        print("\nPress Ctrl+C to disconnect.\n")
+
+        # Wait for disconnect
+        try:
+            while vpn.is_connected():
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n\nDisconnecting...")
+            vpn.disconnect()
+            print("[✓] Disconnected")
+            return 0
+    else:
+        print(f"\n[!] Connection failed: {status.error}")
+        return 1
+
+    return 0
+
+
+def _cmd_disconnect(args: argparse.Namespace) -> int:
+    """Disconnect from VPN."""
+    from .proxy_config import ProxyConfig
+
+    print("Disconnecting VPN...")
+
+    # Clear system proxy
+    ProxyConfig.clear_system_proxy()
+
+    # Kill any running xray processes
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "xray.exe"],
+                capture_output=True,
+                timeout=5,
+            )
+        else:
+            subprocess.run(
+                ["pkill", "-f", "xray"],
+                capture_output=True,
+                timeout=5,
+            )
+    except Exception:
+        pass
+
+    print("[✓] Disconnected")
+    return 0
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    """Show VPN status."""
+    from .proxy_config import ProxyConfig
+
+    print("=== VPN Status ===\n")
+
+    # Check if xray is running
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq xray.exe"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            running = "xray.exe" in result.stdout
+        else:
+            result = subprocess.run(
+                ["pgrep", "-f", "xray"],
+                capture_output=True,
+                timeout=5,
+            )
+            running = result.returncode == 0
+    except Exception:
+        running = False
+
+    if running:
+        print("Status:    [✓] Connected")
+    else:
+        print("Status:    [✗] Disconnected")
+
+    # Check system proxy
+    proxy = ProxyConfig.get_system_proxy()
+    if proxy:
+        print(f"Proxy:     {proxy.get('server', 'configured')}")
+    else:
+        print("Proxy:     Not configured")
+
+    return 0
+
+
+def _cmd_list(args: argparse.Namespace) -> int:
+    """List available servers."""
+    print("=== Available Servers ===\n")
+
+    pipeline = Pipeline(
+        check_health=True,
+        anti_censorship_level=args.anti_censorship_level,
+        limit=args.limit,
+    )
+
+    stop_ctrl = PipelineStopController()
+    result = pipeline.run(stop_event=stop_ctrl.event)
+    configs = _configs_from_result(result)
+
+    if not configs:
+        print("No servers found")
+        return 1
+
+    print(f"Found {len(configs)} servers:\n")
+    print(f"{'#':>3}  {'Protocol':<8}  {'Config':<70}")
+    print("-" * 85)
+
+    for i, cfg in enumerate(configs[:args.limit or 20], 1):
+        proto = cfg.split("://")[0].upper() if "://" in cfg else "???"
+        print(f"{i:3d}  {proto:<8}  {cfg[:70]}")
+
+    if len(configs) > (args.limit or 20):
+        print(f"\n... and {len(configs) - (args.limit or 20)} more")
+
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Discovery Commands
+# ---------------------------------------------------------------------------
 
 
 def _run_pipeline_interactive(
@@ -149,11 +321,7 @@ def _run_pipeline_interactive(
     binary_path: Optional[str] = None,
     token: Optional[str] = None,
 ) -> PipelineResult:
-    """Build and run a :class:`~pipeline.Pipeline`, honouring Ctrl+C.
-
-    Returns the :class:`~pipeline.PipelineResult` (possibly partial if the
-    user pressed Ctrl+C).
-    """
+    """Build and run a Pipeline, honouring Ctrl+C."""
     stop_ctrl = PipelineStopController()
     orig_sigint = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, lambda _s, _f: stop_ctrl.stop())
@@ -174,15 +342,67 @@ def _run_pipeline_interactive(
         signal.signal(signal.SIGINT, orig_sigint)
 
 
-# ---------------------------------------------------------------------------
-# Interactive menu (V1-A2 — now uses Pipeline)
-# ---------------------------------------------------------------------------
+def _cmd_discover(args: argparse.Namespace) -> int:
+    """Discover and score configs."""
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+
+    if args.interactive:
+        return _discover_interactive(token)
+
+    # Non-interactive
+    stop_ctrl = PipelineStopController()
+    orig_sigint = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, lambda _s, _f: stop_ctrl.stop())
+
+    if not args.quiet:
+        print("Fetching servers from known sources...")
+        print("[i] Press Ctrl+C at any time to stop and save partial results\n")
+
+    pipeline = Pipeline(
+        check_health=args.check_health or args.xray_check,
+        check_http_probe=False,
+        check_google_204=args.xray_check,
+        timeout=args.health_timeout,
+        min_quality_score=args.min_quality,
+        limit=args.limit,
+        binary_path=getattr(args, "xray_binary", None),
+        github_token=token,
+        anti_censorship_level=args.anti_censorship_level,
+    )
+
+    result = pipeline.run(stop_event=stop_ctrl.event)
+    signal.signal(signal.SIGINT, orig_sigint)
+
+    configs = _configs_from_result(result)
+
+    if args.stats_only:
+        print_stats(
+            result.health_dicts or [{"config": c} for c in configs],
+            show_health=args.check_health,
+            show_xray=args.xray_check,
+            pipeline_stats=result.stats,
+        )
+        return 0
+
+    if args.output:
+        save_results(configs, args.output)
+        print_stats(
+            result.health_dicts or [{"config": c} for c in configs],
+            pipeline_stats=result.stats,
+        )
+    else:
+        print_stats(
+            result.health_dicts or [{"config": c} for c in configs],
+            pipeline_stats=result.stats,
+        )
+
+    return 0
 
 
-def interactive_menu(token: Optional[str]) -> None:
-    """Display interactive terminal menu, backed by :class:`~pipeline.Pipeline`."""
+def _discover_interactive(token: Optional[str]) -> int:
+    """Interactive discovery mode."""
     while True:
-        print("\n=== V2Ray Server Finder ===")
+        print("\n=== v2ray-finder Discovery ===")
         print("1. Fetch from known sources")
         print("2. Fetch with health checking (TCP)")
         print("3. Fetch + health + real xray check")
@@ -199,26 +419,14 @@ def interactive_menu(token: Optional[str]) -> None:
         if choice == "0":
             print("Goodbye!")
             break
-
-        # ---- 1: Fetch only ----
         elif choice == "1":
             print("\nFetching from known sources...")
             result = _run_pipeline_interactive(token=token)
             configs = _configs_from_result(result)
-            if result.stats.get("dropped_per_source") or result.stats.get(
-                "dropped_global"
-            ):
-                print(
-                    f"[!] Caps applied — "
-                    f"dropped {result.stats.get('dropped_per_source', 0)} per-source, "
-                    f"{result.stats.get('dropped_global', 0)} globally."
-                )
             print_stats(
                 [{"config": c} for c in configs],
                 pipeline_stats=result.stats,
             )
-
-        # ---- 2: Health check ----
         elif choice == "2":
             try:
                 min_q_str = input("Min quality score (0-100, default 0): ").strip()
@@ -237,22 +445,6 @@ def interactive_menu(token: Optional[str]) -> None:
                 show_health=True,
                 pipeline_stats=result.stats,
             )
-            if result.scores:
-                try:
-                    show_top = input("\nShow top 10 by score? (y/n): ").strip().lower()
-                except (KeyboardInterrupt, EOFError):
-                    show_top = "n"
-                if show_top == "y":
-                    print("\nTop 10 servers:")
-                    for i, score in enumerate(result.scores[:10], 1):
-                        print(
-                            f"{i:2d}. [{score.protocol:8s}] "
-                            f"Grade: {score.grade} | "
-                            f"Latency: {score.latency_ms or 0:6.1f}ms | "
-                            f"{score.config[:60]}"
-                        )
-
-        # ---- 3: xray real check ----
         elif choice == "3":
             try:
                 limit_str = input("Limit servers to check (0 for all): ").strip()
@@ -263,7 +455,6 @@ def interactive_menu(token: Optional[str]) -> None:
                 continue
             limit = int(limit_str) if limit_str and limit_str != "0" else None
             print("\nFetching + health + xray real-connectivity checks...")
-            print("(Requires xray binary; may take several minutes)")
             result = _run_pipeline_interactive(
                 check_health=True,
                 check_google_204=True,
@@ -278,8 +469,6 @@ def interactive_menu(token: Optional[str]) -> None:
                 show_xray=True,
                 pipeline_stats=result.stats,
             )
-
-        # ---- 4: Save to file ----
         elif choice == "4":
             try:
                 filename = (
@@ -299,14 +488,7 @@ def interactive_menu(token: Optional[str]) -> None:
                 token=token,
             )
             configs = _configs_from_result(result)
-            save_results(configs, filename, partial=False)
-            print_stats(
-                [{"config": c} for c in configs],
-                show_health=check_health,
-                pipeline_stats=result.stats,
-            )
-
-        # ---- 5: Stats only ----
+            save_results(configs, filename)
         elif choice == "5":
             try:
                 check_health = input("Check health? (y/n): ").strip().lower() == "y"
@@ -323,90 +505,8 @@ def interactive_menu(token: Optional[str]) -> None:
                 show_health=check_health,
                 pipeline_stats=result.stats,
             )
-
         else:
             print("Invalid option. Please try again.")
-
-
-# ---------------------------------------------------------------------------
-# Non-interactive pipeline runner (V1-A1)
-# ---------------------------------------------------------------------------
-
-
-def _run_pipeline(
-    args: argparse.Namespace,
-    token: Optional[str],
-) -> int:
-    """Execute the non-interactive path via :class:`~pipeline.Pipeline`.
-
-    Returns the process exit code (0 = success, 1 = error, 130 = stopped).
-    """
-    stop_ctrl = PipelineStopController()
-    orig_sigint = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, lambda _s, _f: stop_ctrl.stop())
-
-    if not args.quiet:
-        action = "known sources"
-        health_note = " with health checking" if args.check_health else ""
-        xray_note = " with xray real-check" if args.xray_check else ""
-        print(f"Fetching servers from {action}{health_note}{xray_note}...")
-        print("[i] Press Ctrl+C at any time to stop and save partial results\n")
-
-    pipeline = Pipeline(
-        check_health=args.check_health or args.xray_check,
-        check_http_probe=False,
-        check_google_204=args.xray_check,
-        timeout=args.health_timeout,
-        min_quality_score=args.min_quality,
-        limit=args.limit,
-        binary_path=getattr(args, "xray_binary", None),
-        github_token=token,
-    )
-
-    result = pipeline.run(stop_event=stop_ctrl.event)
-    signal.signal(signal.SIGINT, orig_sigint)
-
-    if stop_ctrl.is_set():
-        print("\n[!] Operation stopped by user")
-        out_file = args.output if args.output else "v2ray_servers_partial.txt"
-        save_results(_configs_from_result(result), out_file, partial=True)
-        print_stats(
-            result.health_dicts or [{"config": c} for c in result.configs],
-            show_health=args.check_health,
-            show_xray=args.xray_check,
-            pipeline_stats=result.stats,
-        )
-        return 130
-
-    output_configs = _configs_from_result(result)
-    if args.limit:
-        output_configs = output_configs[: args.limit]
-
-    if args.stats_only:
-        print_stats(
-            result.health_dicts or [{"config": c} for c in output_configs],
-            show_health=args.check_health,
-            show_xray=args.xray_check,
-            pipeline_stats=result.stats,
-        )
-        return 0
-
-    if args.output:
-        try:
-            with open(args.output, "w", encoding="utf-8") as fh:
-                for cfg in output_configs:
-                    fh.write(f"{cfg}\n")
-        except OSError as exc:
-            print(f"\nFailed to write {args.output}: {exc}", file=sys.stderr)
-            return 1
-        if not args.quiet:
-            print(f"\n[\u2713] Saved {len(output_configs)} servers to {args.output}")
-            if result.stats:
-                print(
-                    f"    (fetched {result.stats.get('fetched', '?')}, "
-                    f"deduped {result.stats.get('deduped', '?')}, "
-                    f"healthy {result.stats.get('healthy', '?')})"
-                )
 
     return 0
 
@@ -418,57 +518,142 @@ def _run_pipeline(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fetch and aggregate V2Ray server configs from GitHub",
-        epilog="For security, use GITHUB_TOKEN environment variable instead of -t flag.",
+        description="v2ray-finder — VPN and V2Ray/Xray config finder",
+        epilog="Use 'v2ray-finder <command> --help' for command-specific help.",
     )
-    parser.add_argument(
-        "-t",
-        "--token",
-        help="GitHub token (DEPRECATED: use GITHUB_TOKEN env var instead)",
+
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+
+    # --- connect ---
+    connect_parser = subparsers.add_parser(
+        "connect",
+        help="Connect to a V2Ray/Xray server",
     )
-    parser.add_argument(
-        "--prompt-token",
+    connect_parser.add_argument(
+        "--config", "-c",
+        help="Config URI string (auto-selects best if not provided)",
+    )
+    connect_parser.add_argument(
+        "--auto", "-a",
         action="store_true",
-        help="Prompt for GitHub token interactively (secure input)",
+        help="Auto-select best server (no interactive prompt)",
     )
-    parser.add_argument("-o", "--output", help="Output filename for saving servers")
-    parser.add_argument("-l", "--limit", type=int, help="Limit number of servers")
-    parser.add_argument(
-        "--stats-only", action="store_true", help="Only show statistics"
+    connect_parser.add_argument(
+        "--socks-port",
+        type=int,
+        default=10808,
+        help="Local SOCKS5 port (default: 10808)",
     )
-    parser.add_argument("-q", "--quiet", action="store_true", help="Minimal output")
-    parser.add_argument(
-        "-c",
-        "--check-health",
+    connect_parser.add_argument(
+        "--http-port",
+        type=int,
+        default=None,
+        help="Local HTTP proxy port",
+    )
+    connect_parser.add_argument(
+        "--no-proxy",
         action="store_true",
-        help="Check server health (TCP connectivity and latency)",
+        help="Don't configure system proxy",
     )
-    parser.add_argument(
+    connect_parser.add_argument(
+        "--auto-reconnect",
+        action="store_true",
+        help="Auto-reconnect if xray crashes",
+    )
+    connect_parser.add_argument(
+        "--anti-censorship-level",
+        type=int,
+        default=0,
+        help="Minimum anti-censorship level (0-5)",
+    )
+
+    # --- disconnect ---
+    subparsers.add_parser("disconnect", help="Disconnect from VPN")
+
+    # --- status ---
+    subparsers.add_parser("status", help="Show VPN status")
+
+    # --- list ---
+    list_parser = subparsers.add_parser("list", help="List available servers")
+    list_parser.add_argument(
+        "--limit", "-l",
+        type=int,
+        default=20,
+        help="Maximum servers to show (default: 20)",
+    )
+    list_parser.add_argument(
+        "--anti-censorship-level",
+        type=int,
+        default=0,
+        help="Minimum anti-censorship level (0-5)",
+    )
+
+    # --- discover ---
+    discover_parser = subparsers.add_parser(
+        "discover",
+        help="Discover and score configs (legacy mode)",
+    )
+    discover_parser.add_argument(
+        "-t", "--token",
+        help="GitHub token (prefer GITHUB_TOKEN env var)",
+    )
+    discover_parser.add_argument(
+        "-o", "--output",
+        help="Output filename for saving servers",
+    )
+    discover_parser.add_argument(
+        "-l", "--limit",
+        type=int,
+        help="Limit number of servers",
+    )
+    discover_parser.add_argument(
+        "--stats-only",
+        action="store_true",
+        help="Only show statistics",
+    )
+    discover_parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Minimal output",
+    )
+    discover_parser.add_argument(
+        "-c", "--check-health",
+        action="store_true",
+        help="Check server health (TCP)",
+    )
+    discover_parser.add_argument(
         "--min-quality",
         type=float,
         default=0.0,
-        help="Minimum quality score (0-100, default: 0)",
+        help="Minimum quality score (0-100)",
     )
-    parser.add_argument(
+    discover_parser.add_argument(
         "--health-timeout",
         type=float,
         default=5.0,
-        help="Health check timeout in seconds (default: 5.0)",
+        help="Health check timeout in seconds",
     )
-    parser.add_argument(
+    discover_parser.add_argument(
         "--xray-check",
         action="store_true",
-        help="Run real connectivity check via xray proxy (ground-truth)",
+        help="Run xray real connectivity check",
     )
-    parser.add_argument(
+    discover_parser.add_argument(
         "--xray-binary",
-        help="Path to xray binary (auto-downloaded if not found)",
+        help="Path to xray binary",
     )
-    parser.add_argument(
-        "--xray-no-download",
+    discover_parser.add_argument(
+        "--anti-censorship-level",
+        type=int,
+        default=0,
+        help="Minimum anti-censorship level (0-5)",
+    )
+    discover_parser.add_argument(
+        "-i", "--interactive",
         action="store_true",
-        help="Disable automatic xray binary download",
+        help="Interactive discovery mode",
     )
+
     return parser
 
 
@@ -482,36 +667,20 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    # --- Token resolution ---
-    token: Optional[str] = None
-    if args.token:
-        token = args.token
-        print(
-            "WARNING: Passing tokens via command line is insecure!\n"
-            "         Token may appear in shell history and process listings.\n"
-            f"         Use environment variable: export GITHUB_TOKEN='your_token'\n",
-            file=sys.stderr,
-        )
-    elif args.prompt_token:
-        token = prompt_for_token()
-
-    token_from_env = os.environ.get("GITHUB_TOKEN")
-    if not token and token_from_env:
-        token = token_from_env
-        if not args.quiet:
-            print("[i] Using GitHub token from GITHUB_TOKEN environment variable")
-    elif (
-        not token and not args.prompt_token and not any([args.output, args.stats_only])
-    ):
-        token = prompt_for_token()
-
-    # --- Interactive mode (V1-A2) ---
-    if not any([args.output, args.stats_only]):
-        interactive_menu(token)
-        return
-
-    # --- Non-interactive mode via Pipeline (V1-A1) ---
-    sys.exit(_run_pipeline(args, token))
+    # Route to appropriate command
+    if args.command == "connect":
+        sys.exit(_cmd_connect(args))
+    elif args.command == "disconnect":
+        sys.exit(_cmd_disconnect(args))
+    elif args.command == "status":
+        sys.exit(_cmd_status(args))
+    elif args.command == "list":
+        sys.exit(_cmd_list(args))
+    elif args.command == "discover":
+        sys.exit(_cmd_discover(args))
+    else:
+        # Default: show help
+        parser.print_help()
 
 
 if __name__ == "__main__":

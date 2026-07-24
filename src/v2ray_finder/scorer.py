@@ -5,13 +5,14 @@ so callers can rank servers by overall quality.
 
 Dimensions
 ----------
-latency_score        TCP round-trip time, normalised and inverted.
-reachability_score   Combination of tcp_ok + http_ok.
-google_204_score     Whether the proxy passed the Google 204 real-world check.
-protocol_score       Fixed weight per proxy protocol.
-source_trust_score   Trustworthiness of the subscription source (1/2/3).
-freshness_score      How recently the config was seen.
-uniqueness_score     Inverse of overlap with other subscription sources.
+latency_score           TCP round-trip time, normalised and inverted.
+reachability_score      Combination of tcp_ok + http_ok.
+google_204_score        Whether the proxy passed the Google 204 real-world check.
+protocol_score          Fixed weight per proxy protocol.
+source_trust_score      Trustworthiness of the subscription source (1/2/3).
+freshness_score         How recently the config was seen.
+uniqueness_score        Inverse of overlap with other subscription sources.
+anti_censorship_score   Resistance to Deep Packet Inspection (DPI).
 """
 
 from __future__ import annotations
@@ -35,13 +36,14 @@ _PROTOCOL_SCORES: Dict[str, float] = {
 }
 
 _WEIGHTS: Dict[str, float] = {
-    "latency": 0.30,
-    "reachability": 0.30,
+    "latency": 0.25,
+    "reachability": 0.25,
     "protocol": 0.10,
     "source_trust": 0.10,
     "freshness": 0.05,
     "uniqueness": 0.05,
     "google_204": 0.10,
+    "anti_censorship": 0.10,
 }
 
 _REACH_W_TCP = 0.70
@@ -73,6 +75,18 @@ def _protocol_score(protocol: str) -> float:
     return _PROTOCOL_SCORES.get(protocol.lower(), 0.5)
 
 
+def _anti_censorship_to_score(level: int) -> float:
+    """Map anti-censorship level (1-5) to score (0.0-1.0).
+
+    Args:
+        level: Anti-censorship level (1=weak, 5=maximum).
+
+    Returns:
+        Score in [0.0, 1.0].
+    """
+    return {1: 0.1, 2: 0.3, 3: 0.5, 4: 0.8, 5: 1.0}.get(level, 0.0)
+
+
 # ---------------------------------------------------------------------------
 # ServerScore dataclass
 # ---------------------------------------------------------------------------
@@ -82,7 +96,22 @@ _ZERO_SCORE: "ServerScore"
 
 @dataclass
 class ServerScore:
-    """Scoring result for a single server."""
+    """Scoring result for a single server.
+
+    Attributes:
+        config: The config URI string.
+        protocol: Detected protocol (vmess, vless, etc.).
+        latency_score: Latency score (0.0-1.0).
+        reachability_score: Reachability score (0.0-1.0).
+        protocol_score: Protocol score (0.0-1.0).
+        source_trust_score: Source trust score (0.0-1.0).
+        freshness_score: Freshness score (0.0-1.0).
+        uniqueness_score: Uniqueness score (0.0-1.0).
+        google_204_score: Google 204 score (0.0-1.0).
+        anti_censorship_score: Anti-censorship score (0.0-1.0).
+        latency_ms: Measured latency in milliseconds.
+        health_details: Additional health check details.
+    """
 
     config: str
     protocol: str
@@ -93,11 +122,13 @@ class ServerScore:
     freshness_score: float = 0.0
     uniqueness_score: float = 0.0
     google_204_score: float = 0.0
+    anti_censorship_score: float = 0.0
     latency_ms: Optional[float] = None
     health_details: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def total(self) -> float:
+        """Compute weighted total score (0.0-1.0)."""
         raw = (
             _WEIGHTS["latency"] * self.latency_score
             + _WEIGHTS["reachability"] * self.reachability_score
@@ -106,11 +137,13 @@ class ServerScore:
             + _WEIGHTS["freshness"] * self.freshness_score
             + _WEIGHTS["uniqueness"] * self.uniqueness_score
             + _WEIGHTS["google_204"] * self.google_204_score
+            + _WEIGHTS["anti_censorship"] * self.anti_censorship_score
         )
         return round(min(max(raw, 0.0), 1.0), 4)
 
     @property
     def grade(self) -> str:
+        """Compute letter grade (A-F) based on total score."""
         t = self.total
         if t >= 0.80:
             return "A"
@@ -122,7 +155,20 @@ class ServerScore:
             return "D"
         return "F"
 
-    # V3-A1: serialisation
+    @property
+    def anti_censorship_grade(self) -> str:
+        """Compute anti-censorship letter grade (A-F)."""
+        s = self.anti_censorship_score
+        if s >= 0.9:
+            return "A"
+        if s >= 0.7:
+            return "B"
+        if s >= 0.5:
+            return "C"
+        if s >= 0.3:
+            return "D"
+        return "F"
+
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-safe dict representation of this score.
 
@@ -142,6 +188,8 @@ class ServerScore:
             "freshness_score": self.freshness_score,
             "uniqueness_score": self.uniqueness_score,
             "google_204_score": self.google_204_score,
+            "anti_censorship_score": self.anti_censorship_score,
+            "anti_censorship_grade": self.anti_censorship_grade,
             "health_details": self.health_details,
         }
 
@@ -153,7 +201,8 @@ class ServerScore:
         lat = f"{self.latency_ms:.0f}ms" if self.latency_ms is not None else "n/a"
         return (
             f"<ServerScore protocol={self.protocol} total={self.total:.4f}"
-            f" grade={self.grade} latency={lat}>"
+            f" grade={self.grade} latency={lat}"
+            f" anti_censorship={self.anti_censorship_grade}>"
         )
 
 
@@ -175,8 +224,25 @@ def score_server(
     source_trust: int = 1,
     freshness_score: float = 0.0,
     overlap_ratio: float = 0.0,
+    anti_censorship_level: int = 2,
 ) -> ServerScore:
-    """Score a single server."""
+    """Score a single server.
+
+    Args:
+        config: Config URI string.
+        protocol: Detected protocol.
+        latency_ms: Measured latency in milliseconds.
+        tcp_ok: Whether TCP connection succeeded.
+        http_ok: Whether HTTP probe succeeded.
+        google_204_ok: Whether Google 204 check succeeded.
+        source_trust: Source trust level (1=low, 2=medium, 3=high).
+        freshness_score: Freshness score (0.0-1.0).
+        overlap_ratio: Overlap ratio with other sources (0.0-1.0).
+        anti_censorship_level: Anti-censorship level (1-5).
+
+    Returns:
+        ServerScore with computed scores.
+    """
     proto = protocol.lower().rstrip("/").rstrip(":")
     ls = _latency_to_score(latency_ms)
     rs = _reachability_to_score(tcp_ok, http_ok)
@@ -184,6 +250,7 @@ def score_server(
     ts = _trust_to_score(source_trust)
     us = round(max(0.0, 1.0 - overlap_ratio), 6)
     g204 = 1.0 if google_204_ok else 0.0
+    acs = _anti_censorship_to_score(anti_censorship_level)
     return ServerScore(
         config=config,
         protocol=proto,
@@ -195,10 +262,12 @@ def score_server(
         freshness_score=freshness_score,
         uniqueness_score=us,
         google_204_score=g204,
+        anti_censorship_score=acs,
         health_details={
             "tcp_ok": tcp_ok,
             "http_ok": http_ok,
             "google_204_ok": google_204_ok,
+            "anti_censorship_level": anti_censorship_level,
         },
     )
 
@@ -224,6 +293,14 @@ def score_servers(
 
     Sorting is stable and deterministic (V3-Q3):
     primary total, secondary latency_ms asc (None last), tertiary config asc.
+
+    Args:
+        health_results: List of health check result dicts.
+        overlap_map: Optional source URL to overlap ratio mapping.
+        descending: If True, highest score first.
+
+    Returns:
+        Sorted list of ServerScore objects.
     """
     if overlap_map is None:
         overlap_map = {}
@@ -243,6 +320,7 @@ def score_servers(
                 source_trust=int(h.get("source_trust", 1)),
                 freshness_score=float(h.get("freshness_score", 0.0)),
                 overlap_ratio=float(overlap_ratio),
+                anti_censorship_level=int(h.get("anti_censorship_level", 2)),
             )
         )
     return sorted(scores, key=lambda s: _sort_key(s, descending))
@@ -252,7 +330,15 @@ def sort_by_score(
     scores: List[ServerScore],
     descending: bool = True,
 ) -> List[ServerScore]:
-    """Sort ServerScore objects — stable composite key (V3-Q3)."""
+    """Sort ServerScore objects — stable composite key (V3-Q3).
+
+    Args:
+        scores: List of ServerScore objects.
+        descending: If True, highest score first.
+
+    Returns:
+        Sorted list of ServerScore objects.
+    """
     return sorted(scores, key=lambda s: _sort_key(s, descending))
 
 
@@ -261,7 +347,16 @@ def sort_by_quality(
     descending: bool = True,
     overlap_map: Optional[Dict[str, float]] = None,
 ) -> List[Dict[str, Any]]:
-    """Score health_results, sort, return enriched original dicts."""
+    """Score health_results, sort, return enriched original dicts.
+
+    Args:
+        health_results: List of health check result dicts.
+        descending: If True, highest quality first.
+        overlap_map: Optional source URL to overlap ratio mapping.
+
+    Returns:
+        Sorted list of enriched health result dicts with ``_score`` key.
+    """
     scored = score_servers(
         health_results, overlap_map=overlap_map, descending=descending
     )
