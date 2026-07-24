@@ -212,6 +212,7 @@ def _cmd_disconnect(args: argparse.Namespace) -> int:
 
     # Kill any running xray processes
     import subprocess
+
     try:
         if sys.platform == "win32":
             subprocess.run(
@@ -240,6 +241,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
     # Check if xray is running
     import subprocess
+
     try:
         if sys.platform == "win32":
             result = subprocess.run(
@@ -296,7 +298,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
     print(f"{'#':>3}  {'Protocol':<8}  {'Config':<70}")
     print("-" * 85)
 
-    for i, cfg in enumerate(configs[:args.limit or 20], 1):
+    for i, cfg in enumerate(configs[: args.limit or 20], 1):
         proto = cfg.split("://")[0].upper() if "://" in cfg else "???"
         print(f"{i:3d}  {proto:<8}  {cfg[:70]}")
 
@@ -530,11 +532,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Connect to a V2Ray/Xray server",
     )
     connect_parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         help="Config URI string (auto-selects best if not provided)",
     )
     connect_parser.add_argument(
-        "--auto", "-a",
+        "--auto",
+        "-a",
         action="store_true",
         help="Auto-select best server (no interactive prompt)",
     )
@@ -576,7 +580,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- list ---
     list_parser = subparsers.add_parser("list", help="List available servers")
     list_parser.add_argument(
-        "--limit", "-l",
+        "--limit",
+        "-l",
         type=int,
         default=20,
         help="Maximum servers to show (default: 20)",
@@ -594,15 +599,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Discover and score configs (legacy mode)",
     )
     discover_parser.add_argument(
-        "-t", "--token",
+        "-t",
+        "--token",
         help="GitHub token (prefer GITHUB_TOKEN env var)",
     )
     discover_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         help="Output filename for saving servers",
     )
     discover_parser.add_argument(
-        "-l", "--limit",
+        "-l",
+        "--limit",
         type=int,
         help="Limit number of servers",
     )
@@ -612,12 +620,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Only show statistics",
     )
     discover_parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Minimal output",
     )
     discover_parser.add_argument(
-        "-c", "--check-health",
+        "-c",
+        "--check-health",
         action="store_true",
         help="Check server health (TCP)",
     )
@@ -649,7 +659,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Minimum anti-censorship level (0-5)",
     )
     discover_parser.add_argument(
-        "-i", "--interactive",
+        "-i",
+        "--interactive",
         action="store_true",
         help="Interactive discovery mode",
     )

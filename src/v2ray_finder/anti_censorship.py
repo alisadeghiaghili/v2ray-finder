@@ -308,7 +308,9 @@ def scan_config(config: str) -> AntiCensorshipResult:
     }
     parser = parsers.get(protocol)
     if parser is None:
-        result.recommendations.append("Unsupported protocol for anti-censorship analysis")
+        result.recommendations.append(
+            "Unsupported protocol for anti-censorship analysis"
+        )
         return result
 
     details = parser(config)

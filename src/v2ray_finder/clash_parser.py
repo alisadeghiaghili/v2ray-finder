@@ -25,7 +25,6 @@ import re
 from typing import Any, Dict, List
 from urllib.parse import quote
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -210,9 +209,7 @@ def _ss_uri(p: Dict[str, Any]) -> str:
     server = str(p.get("server") or "")
     port = str(p.get("port") or "443")
     userinfo = (
-        base64.urlsafe_b64encode(f"{cipher}:{password}".encode())
-        .decode()
-        .rstrip("=")
+        base64.urlsafe_b64encode(f"{cipher}:{password}".encode()).decode().rstrip("=")
     )
     name = quote(str(p.get("name") or "clash-ss"), safe="")
     return f"ss://{userinfo}@{server}:{port}#{name}"

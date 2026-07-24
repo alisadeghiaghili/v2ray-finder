@@ -9,7 +9,7 @@ Example::
     vpn = VPNManager()
     status = vpn.connect("vless://uuid@host:443?security=reality&...")
     print(f"Connected: {status.socks_proxy}")
-    
+
     # Later
     vpn.disconnect()
 """
@@ -80,7 +80,9 @@ class VPNStatus:
         """Convert to dictionary for serialization."""
         return {
             "connected": self.connected,
-            "config": self.config[:100] + "..." if len(self.config) > 100 else self.config,
+            "config": (
+                self.config[:100] + "..." if len(self.config) > 100 else self.config
+            ),
             "protocol": self.protocol,
             "socks_port": self.socks_port,
             "http_port": self.http_port,
@@ -114,15 +116,15 @@ class VPNManager:
     Example::
 
         vpn = VPNManager()
-        
+
         # Connect to best server
         status = vpn.connect("vless://uuid@host:443?security=reality&...")
         print(f"SOCKS5: {status.socks_proxy}")
-        
+
         # Check status
         if vpn.is_connected():
             print(f"Uptime: {vpn.get_status().uptime_seconds}s")
-        
+
         # Disconnect
         vpn.disconnect()
     """
@@ -257,6 +259,7 @@ class VPNManager:
             binary = find_xray_binary(self._binary_path)
             if not binary and self._auto_download:
                 from .xray_runner import download_xray_binary
+
                 binary = download_xray_binary()
             if not binary:
                 self._status = VPNStatus(
@@ -274,6 +277,7 @@ class VPNManager:
             self._config_file = path
             try:
                 import json
+
                 with os.fdopen(fd, "w") as fh:
                     json.dump(xray_cfg, fh)
             except Exception as exc:
@@ -322,7 +326,11 @@ class VPNManager:
                 return self._status
 
             # Configure system proxy
-            use_system_proxy = set_system_proxy if set_system_proxy is not None else self._set_system_proxy
+            use_system_proxy = (
+                set_system_proxy
+                if set_system_proxy is not None
+                else self._set_system_proxy
+            )
             if use_system_proxy:
                 try:
                     ProxyConfig.set_system_proxy(
@@ -488,6 +496,7 @@ class VPNManager:
     def _wait_for_port(self, port: int, timeout: float = 10.0) -> bool:
         """Wait for a port to accept connections."""
         import socket
+
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
@@ -531,7 +540,10 @@ class VPNManager:
                 self._status.connected = False
                 self._status.error = "xray process died"
 
-                if self._auto_reconnect and self._reconnect_count < self._max_reconnect_attempts:
+                if (
+                    self._auto_reconnect
+                    and self._reconnect_count < self._max_reconnect_attempts
+                ):
                     self._reconnect_count += 1
                     logger.info(
                         "Auto-reconnecting (attempt %d/%d)...",
@@ -555,8 +567,11 @@ class VPNManager:
             # Check latency
             try:
                 import socket
+
                 t0 = time.monotonic()
-                with socket.create_connection(("127.0.0.1", self._status.socks_port), timeout=2.0):
+                with socket.create_connection(
+                    ("127.0.0.1", self._status.socks_port), timeout=2.0
+                ):
                     pass
                 self._status.latency_ms = (time.monotonic() - t0) * 1000
             except Exception:
@@ -566,6 +581,7 @@ class VPNManager:
 
     def _setup_signal_handlers(self) -> None:
         """Set up signal handlers for clean shutdown."""
+
         def _handler(signum, frame):
             logger.info("Signal %d received, disconnecting VPN...", signum)
             self.disconnect()
@@ -611,9 +627,9 @@ def connect_vpn(
 
         vpn = connect_vpn("vless://uuid@host:443?security=reality&...")
         print(f"Connected: {vpn.socks_proxy}")
-        
+
         # Use the proxy...
-        
+
         vpn.disconnect()
     """
     vpn = VPNManager(

@@ -5,13 +5,12 @@ from __future__ import annotations
 import pytest
 
 from v2ray_finder.clash_parser import (
+    _parse_proxy_items,
+    _parse_scalar,
+    _strip_quotes,
     extract_clash_proxy_uris,
     proxy_to_uri,
-    _parse_proxy_items,
-    _strip_quotes,
-    _parse_scalar,
 )
-
 
 # ---------------------------------------------------------------------------
 # _strip_quotes
@@ -79,7 +78,7 @@ class TestProxyToUri:
         uri = proxy_to_uri(proxy)
         assert uri.startswith("vmess://")
         # vmess URI is base64-encoded, so decode and verify
-        raw = uri[len("vmess://"):]
+        raw = uri[len("vmess://") :]
         raw += "=" * (-len(raw) % 4)
         data = json.loads(base64.urlsafe_b64decode(raw))
         assert data["add"] == "example.com"
@@ -259,7 +258,7 @@ proxies:
         assert len(uris) == 2
 
     def test_inline_yaml(self) -> None:
-        yaml = 'proxies:\n  - {name: test, type: vmess, server: ex.com, port: 443, uuid: abc}'
+        yaml = "proxies:\n  - {name: test, type: vmess, server: ex.com, port: 443, uuid: abc}"
         uris = extract_clash_proxy_uris(yaml)
         assert len(uris) == 1
         assert uris[0].startswith("vmess://")

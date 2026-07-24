@@ -40,9 +40,7 @@ _SYSTEM = platform.system().lower()
 class _WindowsProxy:
     """Windows proxy configuration via registry."""
 
-    _INTERNET_SETTINGS = (
-        r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-    )
+    _INTERNET_SETTINGS = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
     _WINHTTP_PATH = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
     @staticmethod
@@ -209,14 +207,13 @@ class _WindowsProxy:
         """Notify Windows that Internet settings have changed."""
         try:
             import ctypes
+
             INTERNET_OPTION_SETTINGS_CHANGED = 39
             INTERNET_OPTION_REFRESH = 37
             ctypes.windll.wininet.InternetSetOptionW(
                 0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0
             )
-            ctypes.windll.wininet.InternetSetOptionW(
-                0, INTERNET_OPTION_REFRESH, 0, 0
-            )
+            ctypes.windll.wininet.InternetSetOptionW(0, INTERNET_OPTION_REFRESH, 0, 0)
         except Exception:
             pass
 
@@ -270,8 +267,14 @@ class _LinuxProxy:
         try:
             # Clear environment variables
             for var in [
-                "ALL_PROXY", "all_proxy", "SOCKS_PROXY", "SOCKS_SERVER",
-                "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy",
+                "ALL_PROXY",
+                "all_proxy",
+                "SOCKS_PROXY",
+                "SOCKS_SERVER",
+                "HTTP_PROXY",
+                "http_proxy",
+                "HTTPS_PROXY",
+                "https_proxy",
             ]:
                 os.environ.pop(var, None)
 
@@ -296,9 +299,7 @@ class _LinuxProxy:
         return result if result else None
 
     @staticmethod
-    def _set_gsettings(
-        host: str, socks_port: int, http_port: Optional[int]
-    ) -> None:
+    def _set_gsettings(host: str, socks_port: int, http_port: Optional[int]) -> None:
         """Set proxy via gsettings (GNOME)."""
         try:
             socks_uri = f"socks5h://{host}:{socks_port}"
@@ -313,7 +314,13 @@ class _LinuxProxy:
                 timeout=5,
             )
             subprocess.run(
-                ["gsettings", "set", "org.gnome.system.proxy.socks", "port", str(socks_port)],
+                [
+                    "gsettings",
+                    "set",
+                    "org.gnome.system.proxy.socks",
+                    "port",
+                    str(socks_port),
+                ],
                 capture_output=True,
                 timeout=5,
             )
@@ -324,7 +331,13 @@ class _LinuxProxy:
                     timeout=5,
                 )
                 subprocess.run(
-                    ["gsettings", "set", "org.gnome.system.proxy.http", "port", str(http_port)],
+                    [
+                        "gsettings",
+                        "set",
+                        "org.gnome.system.proxy.http",
+                        "port",
+                        str(http_port),
+                    ],
                     capture_output=True,
                     timeout=5,
                 )
@@ -370,7 +383,13 @@ class _MacOSProxy:
 
             # Set SOCKS proxy
             subprocess.run(
-                ["networksetup", "-setsocksfirewallproxy", service, host, str(socks_port)],
+                [
+                    "networksetup",
+                    "-setsocksfirewallproxy",
+                    service,
+                    host,
+                    str(socks_port),
+                ],
                 capture_output=True,
                 timeout=10,
             )
@@ -383,7 +402,13 @@ class _MacOSProxy:
                     timeout=10,
                 )
                 subprocess.run(
-                    ["networksetup", "-setsecurewebproxy", service, host, str(http_port)],
+                    [
+                        "networksetup",
+                        "-setsecurewebproxy",
+                        service,
+                        host,
+                        str(http_port),
+                    ],
                     capture_output=True,
                     timeout=10,
                 )

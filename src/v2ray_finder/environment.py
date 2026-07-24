@@ -163,19 +163,18 @@ def detect_environment(
 
     if check_telegram:
         info.telegram_accessible = any(
-            _check_connectivity(host, 443, timeout=timeout)
-            for host in _TELEGRAM_HOSTS
+            _check_connectivity(host, 443, timeout=timeout) for host in _TELEGRAM_HOSTS
         )
 
     if check_github:
         info.github_accessible = any(
-            _check_connectivity(host, 443, timeout=timeout)
-            for host in _GITHUB_HOSTS
+            _check_connectivity(host, 443, timeout=timeout) for host in _GITHUB_HOSTS
         )
 
     # Analyze censorship level
     blocked_count = sum(
-        1 for accessible in [
+        1
+        for accessible in [
             info.google_accessible,
             info.telegram_accessible,
             info.github_accessible,
@@ -255,48 +254,66 @@ def get_recommendations(env: EnvironmentInfo) -> List[Dict[str, str]]:
     recommendations: List[Dict[str, str]] = []
 
     if env.censorship == CensorshipType.NONE:
-        recommendations.append({
-            "protocol": "vmess+tls",
-            "reason": "No censorship detected, standard TLS is sufficient",
-        })
+        recommendations.append(
+            {
+                "protocol": "vmess+tls",
+                "reason": "No censorship detected, standard TLS is sufficient",
+            }
+        )
         return recommendations
 
     if env.censorship in (CensorshipType.MILD, CensorshipType.MODERATE):
-        recommendations.append({
-            "protocol": "vless+reality",
-            "reason": "Reality protocol is undetectable and fast",
-        })
-        recommendations.append({
-            "protocol": "vless+xtls-vision",
-            "reason": "XTLS-Vision is the fastest anti-DPI protocol",
-        })
+        recommendations.append(
+            {
+                "protocol": "vless+reality",
+                "reason": "Reality protocol is undetectable and fast",
+            }
+        )
+        recommendations.append(
+            {
+                "protocol": "vless+xtls-vision",
+                "reason": "XTLS-Vision is the fastest anti-DPI protocol",
+            }
+        )
         if env.country == "iran":
-            recommendations.append({
-                "protocol": "vless+ws+tls",
-                "reason": "WebSocket bypasses Iran's DPI effectively",
-            })
+            recommendations.append(
+                {
+                    "protocol": "vless+ws+tls",
+                    "reason": "WebSocket bypasses Iran's DPI effectively",
+                }
+            )
         elif env.country == "china":
-            recommendations.append({
-                "protocol": "vless+grpc+tls",
-                "reason": "gRPC is harder for GFW to identify and block",
-            })
-            recommendations.append({
-                "protocol": "vless+ws+tls+cdn",
-                "reason": "CDN domain fronting bypasses GFW IP blocking",
-            })
+            recommendations.append(
+                {
+                    "protocol": "vless+grpc+tls",
+                    "reason": "gRPC is harder for GFW to identify and block",
+                }
+            )
+            recommendations.append(
+                {
+                    "protocol": "vless+ws+tls+cdn",
+                    "reason": "CDN domain fronting bypasses GFW IP blocking",
+                }
+            )
 
     if env.censorship in (CensorshipType.HEAVY, CensorshipType.SEVERE):
-        recommendations.append({
-            "protocol": "vless+reality",
-            "reason": "Reality is the most effective against heavy DPI",
-        })
-        recommendations.append({
-            "protocol": "vless+xtls-vision",
-            "reason": "XTLS-Vision combines speed with anti-DPI",
-        })
-        recommendations.append({
-            "protocol": "vless+ws+tls+cdn",
-            "reason": "CDN provides IP diversity against blocking",
-        })
+        recommendations.append(
+            {
+                "protocol": "vless+reality",
+                "reason": "Reality is the most effective against heavy DPI",
+            }
+        )
+        recommendations.append(
+            {
+                "protocol": "vless+xtls-vision",
+                "reason": "XTLS-Vision combines speed with anti-DPI",
+            }
+        )
+        recommendations.append(
+            {
+                "protocol": "vless+ws+tls+cdn",
+                "reason": "CDN provides IP diversity against blocking",
+            }
+        )
 
     return recommendations

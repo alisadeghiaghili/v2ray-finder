@@ -302,19 +302,24 @@ except ImportError:  # pragma: no cover
 
 # Auto selector
 try:
-    from .auto_selector import AutoSelector, SelectionCriteria, SelectionResult, quick_select
+    from .auto_selector import (
+        AutoSelector,
+        SelectionCriteria,
+        SelectionResult,
+        quick_select,
+    )
 except ImportError:  # pragma: no cover
     pass
 
 # Server monitor
 try:
-    from .server_monitor import ServerMonitor, MonitorStatus
+    from .server_monitor import MonitorStatus, ServerMonitor
 except ImportError:  # pragma: no cover
     pass
 
 # DNS manager
 try:
-    from .dns_manager import DNSManager, DNSConfig
+    from .dns_manager import DNSConfig, DNSManager
 except ImportError:  # pragma: no cover
     pass
 

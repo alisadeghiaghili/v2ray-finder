@@ -127,6 +127,7 @@ class DNSManager:
         try:
             # Query for a unique domain
             import socket
+
             result = socket.getaddrinfo("dnsleaktest.com", 80)
             if result:
                 ip = result[0][4][0]
@@ -174,18 +175,37 @@ class DNSManager:
                         interface = " ".join(parts[3:])
                         # Set DNS servers
                         subprocess.run(
-                            ["netsh", "interface", "ipv4", "set", "dnsservers",
-                             interface, "static", primary, "primary"],
+                            [
+                                "netsh",
+                                "interface",
+                                "ipv4",
+                                "set",
+                                "dnsservers",
+                                interface,
+                                "static",
+                                primary,
+                                "primary",
+                            ],
                             capture_output=True,
                             timeout=10,
                         )
                         subprocess.run(
-                            ["netsh", "interface", "ipv4", "add", "dnsservers",
-                             interface, secondary, "index=2"],
+                            [
+                                "netsh",
+                                "interface",
+                                "ipv4",
+                                "add",
+                                "dnsservers",
+                                interface,
+                                secondary,
+                                "index=2",
+                            ],
                             capture_output=True,
                             timeout=10,
                         )
-                        logger.info("Windows DNS configured: %s, %s", primary, secondary)
+                        logger.info(
+                            "Windows DNS configured: %s, %s", primary, secondary
+                        )
                         return True
 
         except Exception as exc:
@@ -209,8 +229,15 @@ class DNSManager:
                     if len(parts) >= 4:
                         interface = " ".join(parts[3:])
                         subprocess.run(
-                            ["netsh", "interface", "ipv4", "set", "dnsservers",
-                             interface, "dhcp"],
+                            [
+                                "netsh",
+                                "interface",
+                                "ipv4",
+                                "set",
+                                "dnsservers",
+                                interface,
+                                "dhcp",
+                            ],
                             capture_output=True,
                             timeout=10,
                         )
@@ -336,7 +363,12 @@ class DNSManager:
                         capture_output=True,
                         timeout=10,
                     )
-                    logger.info("macOS DNS configured on %s: %s, %s", service, primary, secondary)
+                    logger.info(
+                        "macOS DNS configured on %s: %s, %s",
+                        service,
+                        primary,
+                        secondary,
+                    )
                     return True
 
         except Exception as exc:
@@ -391,12 +423,17 @@ class DNSManager:
                     )
 
                     servers = [
-                        s.strip() for s in dns_result.stdout.strip().split("\n")
+                        s.strip()
+                        for s in dns_result.stdout.strip().split("\n")
                         if s.strip() and not s.startswith("There")
                     ]
 
                     if servers:
-                        return {"primary": servers[0], "servers": servers, "service": service}
+                        return {
+                            "primary": servers[0],
+                            "servers": servers,
+                            "service": service,
+                        }
 
         except Exception:
             pass

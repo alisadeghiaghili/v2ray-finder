@@ -9,10 +9,10 @@ Example::
 
     monitor = ServerMonitor()
     monitor.start(vpn_manager)
-    
+
     # Monitor runs in background
     # ...
-    
+
     monitor.stop()
 """
 
@@ -68,7 +68,9 @@ class MonitorStatus:
         """Convert to dictionary."""
         return {
             "monitoring": self.monitoring,
-            "server": self.server[:100] + "..." if len(self.server) > 100 else self.server,
+            "server": (
+                self.server[:100] + "..." if len(self.server) > 100 else self.server
+            ),
             "uptime_seconds": self.uptime_seconds,
             "average_latency_ms": self.average_latency_ms,
             "failure_count": self.failure_count,
@@ -286,7 +288,9 @@ class ServerMonitor:
                 self._trim_history()
 
                 if self._status.failure_count >= self._failure_threshold:
-                    logger.warning("Server unresponsive (%d failures)", self._status.failure_count)
+                    logger.warning(
+                        "Server unresponsive (%d failures)", self._status.failure_count
+                    )
                     if self._on_failure:
                         self._on_failure(self._status.server)
 
@@ -303,7 +307,9 @@ class ServerMonitor:
     def _trim_history(self) -> None:
         """Trim latency history to max size."""
         if len(self._status.latency_history) > self._max_history:
-            self._status.latency_history = self._status.latency_history[-self._max_history:]
+            self._status.latency_history = self._status.latency_history[
+                -self._max_history :
+            ]
 
     def _update_average(self) -> None:
         """Update average latency."""

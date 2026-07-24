@@ -65,9 +65,7 @@ class TestAutoSelector:
         selector = AutoSelector()
         # This will try to fetch from sources, which may fail in test
         # Just verify it doesn't crash
-        result = selector.select(
-            SelectionCriteria(max_servers=0)
-        )
+        result = selector.select(SelectionCriteria(max_servers=0))
         assert isinstance(result, SelectionResult)
 
 

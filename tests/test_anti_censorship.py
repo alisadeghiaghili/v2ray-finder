@@ -13,7 +13,6 @@ from v2ray_finder.anti_censorship import (
     sort_by_anti_censorship,
 )
 
-
 # ---------------------------------------------------------------------------
 # scan_config
 # ---------------------------------------------------------------------------
@@ -132,9 +131,11 @@ class TestScanConfig:
             "net": "tcp",
             "tls": "tls",
         }
-        encoded = base64.urlsafe_b64encode(
-            json.dumps(vmess_obj).encode()
-        ).decode().rstrip("=")
+        encoded = (
+            base64.urlsafe_b64encode(json.dumps(vmess_obj).encode())
+            .decode()
+            .rstrip("=")
+        )
         uri = f"vmess://{encoded}"
         result = scan_config(uri)
         assert result.level == AntiCensorshipLevel.BASIC
@@ -157,7 +158,9 @@ class TestScanConfig:
         """Shadowsocks without TLS should be WEAK level."""
         import base64
 
-        userinfo = base64.urlsafe_b64encode(b"aes-256-gcm:password").decode().rstrip("=")
+        userinfo = (
+            base64.urlsafe_b64encode(b"aes-256-gcm:password").decode().rstrip("=")
+        )
         uri = f"ss://{userinfo}@host.example.com:443"
         result = scan_config(uri)
         assert result.level == AntiCensorshipLevel.WEAK
@@ -273,9 +276,7 @@ class TestSortByAntiCensorship:
 class TestAntiCensorshipResult:
     def test_to_dict(self) -> None:
         """Result should serialize to dict."""
-        result = scan_config(
-            "vless://abc@host:443?security=reality&pbk=x&sid=y&sni=z"
-        )
+        result = scan_config("vless://abc@host:443?security=reality&pbk=x&sid=y&sni=z")
         d = result.to_dict()
         assert "config" in d
         assert "level" in d

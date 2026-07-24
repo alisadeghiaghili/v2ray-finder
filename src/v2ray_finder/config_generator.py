@@ -66,6 +66,7 @@ class GeneratedConfig:
     def to_json(self, indent: int = 2) -> str:
         """Convert to JSON string."""
         import json
+
         return json.dumps(self.config, indent=indent, ensure_ascii=False)
 
 

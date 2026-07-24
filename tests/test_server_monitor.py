@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import time
+
 import pytest
 
-from v2ray_finder.server_monitor import ServerMonitor, MonitorStatus, LatencyRecord
+from v2ray_finder.server_monitor import LatencyRecord, MonitorStatus, ServerMonitor
 
 
 class TestMonitorStatus:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from v2ray_finder.dns_manager import DNSManager, DNSConfig
+from v2ray_finder.dns_manager import DNSConfig, DNSManager
 
 
 class TestDNSConfig:

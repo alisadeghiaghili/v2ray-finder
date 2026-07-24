@@ -849,7 +849,7 @@ class Pipeline:
             Filtered list containing only configs meeting the minimum level.
         """
         try:
-            from .anti_censorship import scan_config, AntiCensorshipLevel
+            from .anti_censorship import AntiCensorshipLevel, scan_config
 
             min_level = AntiCensorshipLevel(self.anti_censorship_level)
             filtered: List[str] = []
