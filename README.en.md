@@ -100,7 +100,7 @@ for score in result.scores[:5]:
 
 - Python ≥ 3.8
 - Internet connection
-- Optional: `httpx` (async fetch), `aiohttp` (health checks), `diskcache` (caching), `PySide6` (GUI)
+- Optional: `httpx` (async fetch), `aiohttp` (health checks), `diskcache-community` (caching), `PySide6` (GUI)
 
 ---
 

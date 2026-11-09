@@ -87,7 +87,7 @@ Jede Implementierung ist eigenständig. Sie können beide unabhängig voneinande
 
 - Python ≥ 3.8
 - Internetverbindung
-- Optional: aiohttp/httpx, diskcache, PySide6
+- Optional: aiohttp/httpx, diskcache-community, PySide6
 
 ---
 
