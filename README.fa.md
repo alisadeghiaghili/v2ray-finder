@@ -97,7 +97,7 @@ for score in result.scores[:5]:
 
 - Python ≥ 3.8
 - اتصال به اینترنت
-- اختیاری: `httpx` (fetch async)، `aiohttp`، `diskcache`، `PySide6`
+- اختیاری: `httpx` (fetch async)، `aiohttp`، `diskcache-community`، `PySide6`
 
 ---
 

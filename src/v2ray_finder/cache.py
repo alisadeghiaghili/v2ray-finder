@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, Optional
 
 try:
-    import diskcache
+    import diskcache_community
 
     DISKCACHE_AVAILABLE = True
 except ImportError:
@@ -126,11 +126,13 @@ class DiskCache(CacheBackend):
     def __init__(self, cache_dir: str = "~/.v2ray_finder_cache"):
         if not DISKCACHE_AVAILABLE:
             raise ImportError(
-                "diskcache not available. Install with: pip install 'v2ray-finder[cache]'"
+                "diskcache-community not available. Install with: pip install 'v2ray-finder[cache]'"
             )
 
         cache_dir = os.path.expanduser(cache_dir)
-        self._cache = diskcache.Cache(cache_dir)
+        self._cache = diskcache_community.Cache(
+            cache_dir, disk=diskcache_community.SafeDisk.with_options(on_error="miss")
+        )
         logger.info(f"Disk cache initialized at {cache_dir}")
 
     def get(self, key: str) -> Optional[Any]:

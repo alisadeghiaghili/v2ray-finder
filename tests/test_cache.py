@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import threading
 import time
 import unittest
@@ -302,7 +303,7 @@ class TestDiskCacheImportError(unittest.TestCase):
         real_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
-            if name == "diskcache":
+            if name == "diskcache_community":
                 raise ImportError("no diskcache")
             return real_import(name, *args, **kwargs)
 
@@ -329,6 +330,18 @@ class TestDiskCacheImportError(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Pipeline cache integration (V2-C1)
 # ---------------------------------------------------------------------------
+
+_planted_calls = []
+
+
+def _planted():
+    _planted_calls.append(True)
+    return "vmess://cGxhbnRlZA=="
+
+
+class _PlantedEntry:
+    def __reduce__(self):
+        return (_planted, ())
 
 
 class TestPipelineCacheIntegration(unittest.TestCase):
@@ -415,6 +428,44 @@ class TestPipelineCacheIntegration(unittest.TestCase):
         key = cm._make_key("source", src.url)
         cached = cm.get(key)
         self.assertEqual(cached, text)
+
+    def test_disk_cache_pickled_entry_is_refetched(self):
+        import diskcache_community
+
+        from v2ray_finder.async_fetcher import FetchResult
+        from v2ray_finder.pipeline import Pipeline
+
+        src = self._src()
+        fake_fr = FetchResult(
+            url=src.url,
+            content=self.VMESS,
+            status_code=200,
+            success=True,
+            error=None,
+            elapsed_ms=10.0,
+        )
+        mock_fetcher = MagicMock()
+        mock_fetcher.fetch_many.return_value = [fake_fr]
+        stop = threading.Event()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cm = CacheManager(backend="disk", ttl=60, cache_dir=tmp)
+            p = Pipeline(sources=[src], check_health=False, cache_manager=cm)
+            with patch("v2ray_finder.pipeline.AsyncFetcher", return_value=mock_fetcher):
+                p._fetch_all_sync(stop, None)
+                p._fetch_all_sync(stop, None)
+                self.assertEqual(mock_fetcher.fetch_many.call_count, 1)
+
+                key = cm._make_key("source", src.url)
+                with diskcache_community.Cache(tmp) as other_writer:
+                    other_writer.set(key, _PlantedEntry())
+
+                result = p._fetch_all_sync(stop, None)
+            cm.close()
+
+        self.assertEqual(_planted_calls, [])
+        self.assertEqual(mock_fetcher.fetch_many.call_count, 2)
+        self.assertEqual(result[src.url], [self.VMESS])
 
     def test_cache_stats_in_pipeline_result(self):
         """PipelineResult.stats includes cache_hits / cache_misses."""
